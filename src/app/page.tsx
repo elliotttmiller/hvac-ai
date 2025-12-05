@@ -16,7 +16,11 @@ import {
   MessageSquare,
   Upload,
   Hammer,
+  Wind,
+  Thermometer,
+  DollarSign,
 } from "lucide-react";
+import Link from "next/link";
 
 export default function Dashboard() {
   return (
@@ -24,54 +28,56 @@ export default function Dashboard() {
       {/* Welcome Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
+          <h1 className="text-3xl font-bold tracking-tight">HVAC AI Platform</h1>
           <p className="text-muted-foreground">
-            Welcome to your AI-powered construction management platform
+            AI-powered HVAC blueprint analysis and cost estimation
           </p>
         </div>
-        <Button>
-          <MessageSquare className="mr-2 h-4 w-4" />
-          Chat with Suna AI
-        </Button>
+        <Link href="/documents">
+          <Button>
+            <Upload className="mr-2 h-4 w-4" />
+            Upload Blueprint
+          </Button>
+        </Link>
       </div>
 
       {/* Key Metrics */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Active Projects</CardTitle>
-            <Building2 className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">12</div>
-            <p className="text-xs text-muted-foreground">
-              +2 from last month
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">AI Agents Active</CardTitle>
-            <Bot className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">8/8</div>
-            <p className="text-xs text-muted-foreground">
-              All systems operational
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Documents Processed</CardTitle>
+            <CardTitle className="text-sm font-medium">Blueprints Analyzed</CardTitle>
             <FileText className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">1,234</div>
+            <div className="text-2xl font-bold">47</div>
             <p className="text-xs text-muted-foreground">
-              +180 today
+              +12 this week
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Components Detected</CardTitle>
+            <Wind className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">1,284</div>
+            <p className="text-xs text-muted-foreground">
+              HVAC components identified
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Est. Value</CardTitle>
+            <DollarSign className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">$2.4M</div>
+            <p className="text-xs text-muted-foreground">
+              Total project estimates
             </p>
           </CardContent>
         </Card>
@@ -82,9 +88,9 @@ export default function Dashboard() {
             <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">98.5%</div>
+            <div className="text-2xl font-bold">96.2%</div>
             <p className="text-xs text-muted-foreground">
-              Building codes compliance
+              ASHRAE & code compliance
             </p>
           </CardContent>
         </Card>
@@ -94,53 +100,53 @@ export default function Dashboard() {
       <Tabs defaultValue="overview" className="space-y-4">
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="agents">Agent Status</TabsTrigger>
-          <TabsTrigger value="projects">Recent Projects</TabsTrigger>
-          <TabsTrigger value="tasks">Task Queue</TabsTrigger>
+          <TabsTrigger value="analysis">Recent Analysis</TabsTrigger>
+          <TabsTrigger value="projects">Projects</TabsTrigger>
+          <TabsTrigger value="stats">Statistics</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-4">
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
-            {/* Project Activity */}
+            {/* Recent Activity */}
             <Card className="col-span-4">
               <CardHeader>
-                <CardTitle>Recent Activity</CardTitle>
+                <CardTitle>Recent Analysis Activity</CardTitle>
                 <CardDescription>
-                  Latest updates from your construction projects
+                  Latest HVAC blueprint analysis and estimations
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex items-center space-x-4">
                   <div className="w-2 h-2 bg-green-500 rounded-full"></div>
                   <div className="flex-1">
-                    <p className="text-sm font-medium">Project Alpha BIM model updated</p>
+                    <p className="text-sm font-medium">Office Building HVAC - Analysis Complete</p>
                     <p className="text-xs text-muted-foreground">2 minutes ago</p>
                   </div>
-                  <Badge variant="secondary">3D Model</Badge>
+                  <Badge variant="secondary">42 Components</Badge>
                 </div>
                 <div className="flex items-center space-x-4">
                   <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
                   <div className="flex-1">
-                    <p className="text-sm font-medium">CAD drawings processed by AI</p>
-                    <p className="text-xs text-muted-foreground">5 minutes ago</p>
+                    <p className="text-sm font-medium">Warehouse Floor Plan - Cost Estimation</p>
+                    <p className="text-xs text-muted-foreground">8 minutes ago</p>
                   </div>
-                  <Badge variant="secondary">OCR</Badge>
+                  <Badge variant="secondary">$185K</Badge>
                 </div>
                 <div className="flex items-center space-x-4">
                   <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
                   <div className="flex-1">
-                    <p className="text-sm font-medium">Building code compliance check completed</p>
-                    <p className="text-xs text-muted-foreground">10 minutes ago</p>
+                    <p className="text-sm font-medium">Retail Space - Compliance Check Passed</p>
+                    <p className="text-xs text-muted-foreground">15 minutes ago</p>
                   </div>
-                  <Badge variant="secondary">Compliance</Badge>
+                  <Badge variant="secondary">Zone 4A</Badge>
                 </div>
                 <div className="flex items-center space-x-4">
                   <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
                   <div className="flex-1">
-                    <p className="text-sm font-medium">PM Bot assigned 12 new tasks</p>
-                    <p className="text-xs text-muted-foreground">15 minutes ago</p>
+                    <p className="text-sm font-medium">Multi-Unit Residential - Blueprint Uploaded</p>
+                    <p className="text-xs text-muted-foreground">23 minutes ago</p>
                   </div>
-                  <Badge variant="secondary">PM</Badge>
+                  <Badge variant="secondary">Processing</Badge>
                 </div>
               </CardContent>
             </Card>

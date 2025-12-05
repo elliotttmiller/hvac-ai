@@ -14,11 +14,11 @@ import {
   Activity,
   Zap,
   MessageSquare,
-  Upload,
   Hammer,
   Wind,
   Thermometer,
   DollarSign,
+  Upload,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -33,10 +33,10 @@ export default function Dashboard() {
             AI-powered HVAC blueprint analysis and cost estimation
           </p>
         </div>
-        <Link href="/documents">
+        <Link href="/projects">
           <Button>
-            <Upload className="mr-2 h-4 w-4" />
-            Upload Blueprint
+            <Building2 className="mr-2 h-4 w-4" />
+            Projects
           </Button>
         </Link>
       </div>
@@ -160,22 +160,33 @@ export default function Dashboard() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
-                <Button className="w-full justify-start" variant="outline">
-                  <Upload className="mr-2 h-4 w-4" />
-                  Upload Documents
-                </Button>
-                <Button className="w-full justify-start" variant="outline">
-                  <Bot className="mr-2 h-4 w-4" />
-                  Chat with AI Agent
-                </Button>
-                <Button className="w-full justify-start" variant="outline">
-                  <Building2 className="mr-2 h-4 w-4" />
-                  View 3D Models
-                </Button>
-                <Button className="w-full justify-start" variant="outline">
-                  <Hammer className="mr-2 h-4 w-4" />
-                  Create New Project
-                </Button>
+                <Link href="/projects">
+                  <Button className="w-full justify-start" variant="outline">
+                    <Building2 className="mr-2 h-4 w-4" />
+                    Projects
+                  </Button>
+                </Link>
+
+                <Link href="/documents">
+                  <Button className="w-full justify-start" variant="outline">
+                    <Bot className="mr-2 h-4 w-4" />
+                    Analyze with AI
+                  </Button>
+                </Link>
+
+                <Link href="/documents">
+                  <Button className="w-full justify-start" variant="outline">
+                    <Building2 className="mr-2 h-4 w-4" />
+                    Analyze Blueprints
+                  </Button>
+                </Link>
+
+                <Link href="/projects">
+                  <Button className="w-full justify-start" variant="outline">
+                    <Hammer className="mr-2 h-4 w-4" />
+                    New Project
+                  </Button>
+                </Link>
               </CardContent>
             </Card>
           </div>

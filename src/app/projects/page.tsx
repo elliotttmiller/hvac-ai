@@ -1,11 +1,12 @@
-'use client';
+"use client";
 
-import React from 'react';
+import React, { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Wind, Building2, DollarSign, Calendar, MapPin, FileText, Plus, Upload } from 'lucide-react';
 import Link from 'next/link';
+import ProjectDetailsModal from '@/components/projects/ProjectDetailsModal';
 
 const projects = [
   {
@@ -41,6 +42,19 @@ const projects = [
 ];
 
 export default function ProjectsPage() {
+  const [selectedProject, setSelectedProject] = useState<any | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+
+  const openProject = (project: any) => {
+    setSelectedProject(project);
+    setModalOpen(true);
+  };
+
+  const closeProject = () => {
+    setModalOpen(false);
+    setSelectedProject(null);
+  };
+
   return (
     <div className="container mx-auto py-8 space-y-6">
       <div className="flex items-center justify-between">
@@ -48,7 +62,7 @@ export default function ProjectsPage() {
           <h1 className="text-3xl font-bold tracking-tight">HVAC Projects</h1>
           <p className="text-muted-foreground">Manage your HVAC blueprint analyses and estimates</p>
         </div>
-        <Link href="/documents">
+        <Link href="/projects/new">
           <Button>
             <Plus className="mr-2 h-4 w-4" />
             New Project
@@ -99,7 +113,7 @@ export default function ProjectsPage() {
                 <Badge variant="outline" className="text-xs">Zone {project.climateZone}</Badge>
               </div>
 
-              <Button variant="outline" className="w-full" size="sm">
+              <Button variant="outline" className="w-full" size="sm" onClick={() => openProject(project)}>
                 <FileText className="mr-2 h-3 w-3" />
                 View Details
               </Button>
@@ -116,15 +130,16 @@ export default function ProjectsPage() {
               <h3 className="text-lg font-semibold">No projects yet</h3>
               <p className="text-sm text-muted-foreground">Upload your first HVAC blueprint to get started</p>
             </div>
-            <Link href="/documents">
+            <Link href="/projects/new">
               <Button>
-                <Upload className="mr-2 h-4 w-4" />
-                Upload Blueprint
+                <Plus className="mr-2 h-4 w-4" />
+                New Project
               </Button>
             </Link>
           </div>
         </Card>
       )}
+      <ProjectDetailsModal project={selectedProject} open={modalOpen} onOpenChange={(v) => { if (!v) closeProject(); else setModalOpen(v); }} />
     </div>
   );
 }

@@ -13,7 +13,6 @@ import {
   Wind,
   DollarSign,
   Menu,
-  Upload,
 } from "lucide-react";
 
 const navigation = [
@@ -24,22 +23,10 @@ const navigation = [
     description: "Overview and metrics",
   },
   {
-    name: "Upload Blueprint",
-    href: "/documents",
-    icon: Upload,
-    description: "Upload and analyze HVAC blueprints",
-  },
-  {
     name: "Projects",
     href: "/projects",
     icon: Building,
     description: "View all projects",
-  },
-  {
-    name: "BIM Viewer",
-    href: "/bim",
-    icon: Wind,
-    description: "3D visualization",
   },
 ];
 

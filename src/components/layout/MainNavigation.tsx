@@ -5,24 +5,15 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import {
-  MessageSquare,
   LayoutDashboard,
   FileText,
   Building,
-  Users,
-  Settings,
-  Bot,
-  Upload,
-  Hammer,
-  Zap,
+  Wind,
+  DollarSign,
   Menu,
-  Search,
-  Bell,
-  User,
+  Upload,
 } from "lucide-react";
 
 const navigation = [
@@ -30,170 +21,97 @@ const navigation = [
     name: "Dashboard",
     href: "/",
     icon: LayoutDashboard,
-    description: "Project overview and metrics",
+    description: "Overview and metrics",
   },
   {
-    name: "Suna AI Chat",
-    href: "/chat",
-    icon: MessageSquare,
-    description: "Master AI orchestrator",
-    badge: "AI",
-  },
-  {
-    name: "Agents",
-    href: "/agents",
-    icon: Bot,
-    description: "Multi-agent dashboard",
-    children: [
-      { name: "Assistant Agent", href: "/agents/assistant" },
-      { name: "Data Upload Bot", href: "/agents/upload" },
-      { name: "PM Bot", href: "/agents/pm" },
-      { name: "Design Converter", href: "/agents/converter" },
-    ],
-  },
-  {
-    name: "Documents",
+    name: "Upload Blueprint",
     href: "/documents",
-    icon: FileText,
-    description: "Processing center",
-    children: [
-      { name: "Upload Center", href: "/documents/upload" },
-      { name: "OCR Processing", href: "/documents/ocr" },
-      { name: "Classifications", href: "/documents/classify" },
-    ],
-  },
-  {
-    name: "3D BIM Viewer",
-    href: "/bim",
-    icon: Building,
-    description: "3D visualization",
-    badge: "3D",
+    icon: Upload,
+    description: "Upload and analyze HVAC blueprints",
   },
   {
     name: "Projects",
     href: "/projects",
-    icon: Hammer,
-    description: "Project management",
+    icon: Building,
+    description: "View all projects",
   },
   {
-    name: "Team",
-    href: "/team",
-    icon: Users,
-    description: "Team directory",
+    name: "BIM Viewer",
+    href: "/bim",
+    icon: Wind,
+    description: "3D visualization",
   },
 ];
 
-interface MainNavigationProps {
-  className?: string;
-}
-
-export default function MainNavigation({ className }: MainNavigationProps) {
+export default function MainNavigation() {
   const pathname = usePathname();
-  const [isOpen, setIsOpen] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
 
-  const NavContent = () => (
-    <div className="flex flex-col h-full">
-      {/* Logo and Brand */}
-      <div className="p-6 border-b">
-        <div className="flex items-center space-x-2">
-          <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-            <Zap className="h-5 w-5 text-primary-foreground" />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold">ConstructAI</h1>
-            <p className="text-xs text-muted-foreground">AI Construction Platform</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Navigation Items */}
-      <nav className="flex-1 p-4 space-y-2">
-        {navigation.map((item) => (
-          <div key={item.name}>
-            <Link
-              href={item.href}
-              className={cn(
-                "flex items-center justify-between w-full px-3 py-2 text-sm rounded-lg transition-colors hover:bg-accent hover:text-accent-foreground",
-                pathname === item.href
-                  ? "bg-accent text-accent-foreground"
-                  : "text-muted-foreground"
-              )}
-              onClick={() => setIsOpen(false)}
-            >
-              <div className="flex items-center space-x-3">
-                <item.icon className="h-4 w-4" />
-                <span>{item.name}</span>
-              </div>
-              {item.badge && (
-                <Badge variant="secondary" className="text-xs">
-                  {item.badge}
-                </Badge>
-              )}
-            </Link>
-
-            {/* Sub-navigation */}
-            {item.children && (
-              <div className="ml-6 mt-1 space-y-1">
-                {item.children.map((child) => (
-                  <Link
-                    key={child.name}
-                    href={child.href}
-                    className={cn(
-                      "block px-3 py-1.5 text-xs rounded-md transition-colors hover:bg-accent hover:text-accent-foreground",
-                      pathname === child.href
-                        ? "bg-accent text-accent-foreground"
-                        : "text-muted-foreground"
-                    )}
-                    onClick={() => setIsOpen(false)}
-                  >
-                    {child.name}
-                  </Link>
-                ))}
-              </div>
+  const NavLinks = () => (
+    <div className="space-y-1">
+      {navigation.map((item) => {
+        const isActive = pathname === item.href;
+        return (
+          <Link
+            key={item.name}
+            href={item.href}
+            onClick={() => setMobileOpen(false)}
+            className={cn(
+              "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all hover:bg-accent",
+              isActive
+                ? "bg-accent text-accent-foreground"
+                : "text-muted-foreground"
             )}
-          </div>
-        ))}
-      </nav>
-
-      <Separator />
-
-      {/* Footer */}
-      <div className="p-4">
-        <Link
-          href="/settings"
-          className={cn(
-            "flex items-center space-x-3 px-3 py-2 text-sm rounded-lg transition-colors hover:bg-accent hover:text-accent-foreground",
-            pathname === "/settings"
-              ? "bg-accent text-accent-foreground"
-              : "text-muted-foreground"
-          )}
-          onClick={() => setIsOpen(false)}
-        >
-          <Settings className="h-4 w-4" />
-          <span>Settings</span>
-        </Link>
-      </div>
+          >
+            <item.icon className="h-4 w-4" />
+            <span>{item.name}</span>
+          </Link>
+        );
+      })}
     </div>
   );
 
   return (
     <>
-      {/* Desktop Sidebar */}
-      <div className={cn("hidden lg:flex lg:w-64 lg:flex-col lg:fixed lg:inset-y-0 lg:z-50 lg:bg-card lg:border-r", className)}>
-        <NavContent />
+      {/* Desktop Navigation */}
+      <div className="hidden md:flex md:flex-col md:w-64 md:fixed md:inset-y-0 md:border-r md:bg-background">
+        <div className="flex flex-col flex-1 min-h-0 pt-5 pb-4">
+          <div className="flex items-center flex-shrink-0 px-4 mb-5">
+            <Wind className="h-8 w-8 text-primary mr-2" />
+            <h1 className="text-xl font-bold">HVAC AI</h1>
+          </div>
+          <div className="flex-1 flex flex-col overflow-y-auto px-3">
+            <NavLinks />
+          </div>
+        </div>
       </div>
 
-      {/* Mobile Sidebar */}
-      <Sheet open={isOpen} onOpenChange={setIsOpen}>
-        <SheetTrigger asChild className="lg:hidden">
-          <Button variant="ghost" size="icon" className="fixed top-4 left-4 z-40">
-            <Menu className="h-5 w-5" />
-          </Button>
-        </SheetTrigger>
-        <SheetContent side="left" className="w-64 p-0">
-          <NavContent />
-        </SheetContent>
-      </Sheet>
+      {/* Mobile Navigation */}
+      <div className="md:hidden fixed top-0 left-0 right-0 z-50 border-b bg-background">
+        <div className="flex items-center justify-between p-4">
+          <div className="flex items-center">
+            <Wind className="h-6 w-6 text-primary mr-2" />
+            <h1 className="text-lg font-bold">HVAC AI</h1>
+          </div>
+          <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+            <SheetTrigger asChild>
+              <Button variant="ghost" size="icon">
+                <Menu className="h-6 w-6" />
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="left" className="w-64">
+              <div className="flex items-center mb-5">
+                <Wind className="h-8 w-8 text-primary mr-2" />
+                <h1 className="text-xl font-bold">HVAC AI</h1>
+              </div>
+              <NavLinks />
+            </SheetContent>
+          </Sheet>
+        </div>
+      </div>
+
+      {/* Spacer for mobile */}
+      <div className="md:hidden h-16" />
     </>
   );
 }

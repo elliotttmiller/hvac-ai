@@ -16,8 +16,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "ConstructAI - AI-Powered Construction Management Platform",
-  description: "Revolutionary construction project management through automated document processing, 2D-to-3D conversion, building codes compliance, and real-time project coordination.",
+  title: "HVACAI - AI-Powered HVAC Management Platform",
+  description:
+    "Revolutionary HVAC project management through automated document processing, 2D-to-3D conversion, building codes compliance, and real-time project coordination.",
 };
 
 export default function RootLayout({

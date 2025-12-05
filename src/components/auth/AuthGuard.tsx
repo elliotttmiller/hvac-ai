@@ -2,8 +2,9 @@
 
 import { useSession } from "next-auth/react";
 import { useRouter, usePathname } from "next/navigation";
-import { useEffect, useState, ReactNode } from "react";
+import { useEffect, useState, useRef, ReactNode } from "react";
 import { Loader2, Zap } from "lucide-react";
+import GlobalLoader from "@/components/ui/GlobalLoader";
 
 interface AuthGuardProps {
   children: ReactNode;
@@ -26,7 +27,7 @@ export default function AuthGuard({ children }: AuthGuardProps) {
   const [isCheckingDirectAuth, setIsCheckingDirectAuth] = useState(true);
 
   // Public routes that don't require authentication
-  const publicRoutes = ['/auth/signin', '/auth/signup', '/auth/error'];
+  const publicRoutes = ['/auth/signup', '/auth/error'];
   const isPublicRoute = publicRoutes.includes(pathname);
 
   // Check for direct authentication on mount
@@ -58,49 +59,94 @@ export default function AuthGuard({ children }: AuthGuardProps) {
   useEffect(() => {
     if (isLoading) return; // Still loading
 
+    // Only enforce redirects when explicitly enabled (e.g., in production).
+    // Use NEXT_PUBLIC_ENFORCE_AUTH=true to enable enforcement.
+    const enforceAuth = process.env.NEXT_PUBLIC_ENFORCE_AUTH === 'true';
+
     if (!isAuthenticated && !isPublicRoute) {
-      // Redirect to sign-in page if not authenticated
-      console.log('🔒 Not authenticated, redirecting to sign-in');
-      router.push('/auth/signin');
+      if (enforceAuth) {
+        // Redirect to home page if not authenticated
+        console.log('🔒 Not authenticated, redirecting to home (enforced)');
+        router.push('/');
+      } else {
+        console.log('🔒 Not authenticated, auth enforcement disabled - not redirecting');
+      }
     } else if (isAuthenticated && isPublicRoute) {
-      // Redirect to dashboard if already authenticated and on public route
-      console.log('✅ Already authenticated, redirecting to dashboard');
-      router.push('/');
+      if (enforceAuth) {
+        // Redirect to dashboard if already authenticated and on public route
+        console.log('✅ Already authenticated, redirecting to dashboard (enforced)');
+        router.push('/');
+      }
     }
   }, [isAuthenticated, isLoading, router, pathname, isPublicRoute]);
 
   // Show loading screen while checking authentication
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="text-center space-y-4">
-          <div className="mx-auto w-12 h-12 bg-primary rounded-lg flex items-center justify-center animate-pulse">
-            <Zap className="h-7 w-7 text-primary-foreground" />
-          </div>
-          <div className="space-y-2">
-            <Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">Loading ConstructAI...</p>
-          </div>
-        </div>
-      </div>
-    );
+  // Loader timing: delay before showing and minimum visible time to avoid flashes
+  const AUTH_LOADING_DELAY = 120; // ms
+  const AUTH_MIN_VISIBLE = 420; // ms
+
+  const [showAuthLoader, setShowAuthLoader] = useState(false);
+  const authDelayRef = useRef<number | null>(null);
+  const authMinRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (isLoading) {
+      // start delay to show loader
+      if (authDelayRef.current) clearTimeout(authDelayRef.current);
+      authDelayRef.current = window.setTimeout(() => {
+        authDelayRef.current = null;
+        setShowAuthLoader(true);
+        // ensure minimum visible time
+        if (authMinRef.current) clearTimeout(authMinRef.current);
+        authMinRef.current = window.setTimeout(() => {
+          authMinRef.current = null;
+          // will be hidden when isLoading becomes false
+        }, AUTH_MIN_VISIBLE);
+      }, AUTH_LOADING_DELAY);
+    } else {
+      // hide loader but respect minimum visible time
+      if (authDelayRef.current) {
+        clearTimeout(authDelayRef.current);
+        authDelayRef.current = null;
+        setShowAuthLoader(false);
+      } else if (showAuthLoader) {
+        // if currently shown, wait for min visible timer or hide immediately
+        if (authMinRef.current) {
+          // schedule hide after remaining time
+          const remaining = AUTH_MIN_VISIBLE; // min timer ensures it's not too quick
+          if (authMinRef.current) {
+            clearTimeout(authMinRef.current);
+            authMinRef.current = window.setTimeout(() => {
+              authMinRef.current = null;
+              setShowAuthLoader(false);
+            }, remaining);
+          }
+        } else {
+          setShowAuthLoader(false);
+        }
+      }
+    }
+
+    return () => {
+      if (authDelayRef.current) {
+        clearTimeout(authDelayRef.current);
+        authDelayRef.current = null;
+      }
+      if (authMinRef.current) {
+        clearTimeout(authMinRef.current);
+        authMinRef.current = null;
+      }
+    };
+  }, [isLoading, showAuthLoader]);
+
+  if (showAuthLoader) {
+    return <GlobalLoader message="Loading HVACAI..." />;
   }
 
-  // Show loading screen while redirecting
+  // During development we no longer redirect to a sign-in page.
+  // Render children even when not authenticated to make local development faster.
   if (!isAuthenticated && !isPublicRoute) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="text-center space-y-4">
-          <div className="mx-auto w-12 h-12 bg-primary rounded-lg flex items-center justify-center">
-            <Zap className="h-7 w-7 text-primary-foreground" />
-          </div>
-          <div className="space-y-2">
-            <Loader2 className="mx-auto h-6 w-6 animate-spin text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">Redirecting to sign in...</p>
-          </div>
-        </div>
-      </div>
-    );
+    return <>{children}</>;
   }
 
   return <>{children}</>;

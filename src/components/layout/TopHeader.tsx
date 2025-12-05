@@ -81,18 +81,18 @@ export default function TopHeader({ className }: TopHeaderProps) {
         localStorage.removeItem('user');
         localStorage.removeItem('authMethod');
 
-        // Redirect to sign-in
-        router.push('/auth/signin');
+        // Redirect to home page
+        router.push('/');
       } catch (error) {
         console.error('Direct logout error:', error);
         // Force logout by clearing storage and redirecting
         localStorage.removeItem('user');
         localStorage.removeItem('authMethod');
-        router.push('/auth/signin');
+        router.push('/');
       }
     } else {
       // Handle NextAuth logout
-      signOut({ callbackUrl: '/auth/signin' });
+      signOut({ callbackUrl: '/' });
     }
   };
 

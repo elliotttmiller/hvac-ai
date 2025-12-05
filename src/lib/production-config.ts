@@ -1,5 +1,5 @@
 /**
- * Production Configuration for ConstructAI Platform
+ * Production Configuration for HVACAI Platform
  * Manages feature flags, performance settings, and production optimizations
  */
 
@@ -328,7 +328,7 @@ export function checkBrowserCompatibility(): {
 export function initializeProduction(): void {
   const config = getConfig();
 
-  console.log('🚀 Initializing ConstructAI Production Environment');
+  console.log('🚀 Initializing HVACAI Production Environment');
   console.log('📊 Configuration:', {
     environment: process.env.NODE_ENV,
     features: Object.entries(config.features)

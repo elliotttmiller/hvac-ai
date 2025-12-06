@@ -55,3 +55,8 @@ build/
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Dataset images and extracted files
+datasets/train/
+datasets/valid/
+datasets/test/

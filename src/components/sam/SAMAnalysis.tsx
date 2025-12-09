@@ -19,6 +19,7 @@ import {
   MousePointerClick,
   FileBarChart
 } from 'lucide-react';
+import { decodeRLEMask, drawMaskOnCanvas } from '@/lib/rle-decoder';
 
 interface SegmentResult {
   label: string;
@@ -88,9 +89,21 @@ export default function SAMAnalysis() {
         canvas.width = img.naturalWidth;
         canvas.height = img.naturalHeight;
         ctx?.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // Redraw all segments when image loads
+        if (segments.length > 0) {
+          drawAllMasks();
+        }
       };
     }
   }, [imagePreview]);
+  
+  // Redraw masks when segments change
+  useEffect(() => {
+    if (segments.length > 0 && canvasRef.current && imageRef.current) {
+      drawAllMasks();
+    }
+  }, [segments]);
 
   const handleCanvasClick = async (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!clickMode || !uploadedImage || !canvasRef.current) return;
@@ -141,11 +154,10 @@ export default function SAMAnalysis() {
       }
 
       const data = await response.json();
-      setSegments(data.segments);
       
-      // Draw mask on canvas
-      if (data.segments.length > 0) {
-        drawMask(data.segments[0]);
+      // Add new segments to the list (keep previous ones)
+      if (data.segments && data.segments.length > 0) {
+        setSegments(prev => [...prev, ...data.segments]);
       }
     } catch (err: any) {
       setError(err.message || 'Failed to segment component');
@@ -188,7 +200,7 @@ export default function SAMAnalysis() {
     }
   };
 
-  const drawMask = (segment: SegmentResult) => {
+  const drawAllMasks = () => {
     const canvas = canvasRef.current;
     const img = imageRef.current;
     if (!canvas || !img) return;
@@ -196,23 +208,55 @@ export default function SAMAnalysis() {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Clear previous drawings
+    // Clear canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // Draw semi-transparent mask (mock visualization)
-    const [x, y, w, h] = segment.bbox;
-    ctx.fillStyle = 'rgba(0, 255, 0, 0.3)';
-    ctx.fillRect(x, y, w, h);
-    ctx.strokeStyle = 'rgba(0, 255, 0, 1)';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(x, y, w, h);
+    // Draw all segment masks
+    segments.forEach((segment, index) => {
+      try {
+        // Decode RLE mask
+        const maskArray = decodeRLEMask(segment.mask);
+        
+        if (maskArray.length === 0) {
+          console.warn('Empty mask for segment:', segment.label);
+          return;
+        }
 
-    // Draw label
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-    ctx.fillRect(x, y - 25, 200, 25);
-    ctx.fillStyle = 'white';
-    ctx.font = '14px Arial';
-    ctx.fillText(`${segment.label} (${(segment.score * 100).toFixed(1)}%)`, x + 5, y - 7);
+        // Use different colors for different segments
+        const colors: [number, number, number][] = [
+          [0, 255, 0],    // Green
+          [255, 0, 0],    // Red
+          [0, 0, 255],    // Blue
+          [255, 255, 0],  // Yellow
+          [255, 0, 255],  // Magenta
+          [0, 255, 255],  // Cyan
+        ];
+        const color = colors[index % colors.length];
+
+        // Draw the mask with semi-transparency
+        drawMaskOnCanvas(ctx, maskArray, color, 0.4);
+
+        // Draw bounding box and label
+        const [x, y, w, h] = segment.bbox;
+        ctx.strokeStyle = `rgb(${color[0]}, ${color[1]}, ${color[2]})`;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x, y, w, h);
+
+        // Draw label background
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        const labelText = `${segment.label} (${(segment.score * 100).toFixed(1)}%)`;
+        const textMetrics = ctx.measureText(labelText);
+        const labelWidth = textMetrics.width + 10;
+        ctx.fillRect(x, y - 25, labelWidth, 25);
+
+        // Draw label text
+        ctx.fillStyle = 'white';
+        ctx.font = '14px Arial';
+        ctx.fillText(labelText, x + 5, y - 7);
+      } catch (error) {
+        console.error('Failed to draw mask for segment:', segment.label, error);
+      }
+    });
   };
 
   const exportToCSV = () => {
@@ -330,6 +374,19 @@ export default function SAMAnalysis() {
                   )}
                 </Button>
               </div>
+              
+              {segments.length > 0 && (
+                <Button
+                  onClick={() => setSegments([])}
+                  variant="outline"
+                  size="sm"
+                  disabled={loading || countLoading}
+                  className="w-full"
+                >
+                  <X className="mr-2 h-4 w-4" />
+                  Clear All Segments ({segments.length})
+                </Button>
+              )}
             </div>
           )}
 

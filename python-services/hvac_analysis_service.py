@@ -13,7 +13,7 @@ import logging
 import os
 import tempfile
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 import numpy as np
 import cv2
@@ -123,6 +123,8 @@ class HealthCheckResponse(BaseModel):
 class SegmentRequest(BaseModel):
     """Request model for SAM segmentation"""
     prompt: str = Field(..., description="JSON string with prompt details")
+    return_top_k: Optional[int] = Field(1, description="Number of top predictions to return")
+    enable_refinement: Optional[bool] = Field(True, description="Enable prompt refinement")
 
 class SegmentationResult(BaseModel):
     """Single segmentation result"""
@@ -130,17 +132,27 @@ class SegmentationResult(BaseModel):
     score: float
     mask: str  # Base64 encoded RLE
     bbox: List[int]  # [x, y, width, height]
+    confidence_breakdown: Optional[Dict[str, float]] = None
+    alternative_labels: Optional[List[Tuple[str, float]]] = None
 
 class SegmentResponse(BaseModel):
     """Response model for segmentation"""
     status: str
     segments: List[SegmentationResult]
+    processing_time_ms: Optional[float] = None
 
 class CountResponse(BaseModel):
     """Response model for component counting"""
     status: str
     total_objects_found: int
     counts_by_category: Dict[str, int]
+    processing_time_ms: Optional[float] = None
+    confidence_stats: Optional[Dict[str, Any]] = None
+
+class MetricsResponse(BaseModel):
+    """Response model for inference metrics"""
+    status: str
+    metrics: Dict[str, Any]
 
 # In-memory storage for demo (replace with database in production)
 analysis_results = {}
@@ -393,7 +405,9 @@ async def get_supported_formats():
 @app.post("/api/v1/segment", response_model=SegmentResponse)
 async def segment_component(
     image: UploadFile = File(...),
-    prompt: str = Form(...)
+    prompt: str = Form(...),
+    return_top_k: int = Form(1),
+    enable_refinement: bool = Form(True)
 ):
     """
     Interactive segmentation endpoint
@@ -401,14 +415,24 @@ async def segment_component(
     Segments a single component based on user prompt (e.g., point click).
     Returns segmentation mask, label, and bounding box.
     
+    Enhanced features:
+    - Returns top-k predictions
+    - Optional prompt refinement for better results
+    - Detailed confidence breakdown
+    - Alternative label suggestions
+    
     Args:
         image: Uploaded P&ID or HVAC diagram image
         prompt: JSON string with prompt details
                Example: {"type": "point", "data": {"coords": [452, 312], "label": 1}}
+        return_top_k: Number of top predictions to return (default: 1)
+        enable_refinement: Enable prompt refinement (default: True)
     
     Returns:
-        Segmentation result with mask, label, score, and bbox
+        Segmentation result with mask, label, score, bbox, and confidence details
     """
+    start_time = datetime.now(datetime.timezone.utc)
+    
     try:
         # Read and decode image
         contents = await image.read()
@@ -428,7 +452,12 @@ async def segment_component(
         if SAM_ENGINE is None:
             raise HTTPException(status_code=503, detail="SAM engine not available")
         
-        results = SAM_ENGINE.segment(img, prompt_dict)
+        results = SAM_ENGINE.segment(
+            img, 
+            prompt_dict, 
+            return_top_k=return_top_k,
+            enable_refinement=enable_refinement
+        )
         
         # Format response
         segments = [
@@ -436,14 +465,19 @@ async def segment_component(
                 label=r.label,
                 score=r.score,
                 mask=r.mask,
-                bbox=r.bbox
+                bbox=r.bbox,
+                confidence_breakdown=r.confidence_breakdown,
+                alternative_labels=r.alternative_labels
             )
             for r in results
         ]
         
+        processing_time = (datetime.now(datetime.timezone.utc) - start_time).total_seconds() * 1000
+        
         return SegmentResponse(
             status="success",
-            segments=segments
+            segments=segments,
+            processing_time_ms=processing_time
         )
         
     except HTTPException:
@@ -454,7 +488,10 @@ async def segment_component(
 
 @app.post("/api/v1/count", response_model=CountResponse)
 async def count_components(
-    image: UploadFile = File(...)
+    image: UploadFile = File(...),
+    grid_size: int = Form(32),
+    confidence_threshold: float = Form(0.85),
+    use_adaptive_grid: bool = Form(True)
 ):
     """
     Automated component counting endpoint
@@ -462,11 +499,19 @@ async def count_components(
     Analyzes entire diagram to identify, classify, and count all recognized components.
     Uses grid-based prompting with Non-Maximum Suppression for de-duplication.
     
+    Enhanced features:
+    - Adaptive grid sizing based on image content
+    - Detailed confidence statistics
+    - Performance monitoring
+    
     Args:
         image: Uploaded P&ID or HVAC diagram image
+        grid_size: Grid spacing for point prompts in pixels (default: 32)
+        confidence_threshold: Minimum confidence score (default: 0.85)
+        use_adaptive_grid: Automatically adjust grid size (default: True)
     
     Returns:
-        Total count and breakdown by component category
+        Total count, breakdown by component category, and confidence statistics
     """
     try:
         # Read and decode image
@@ -481,12 +526,19 @@ async def count_components(
         if SAM_ENGINE is None:
             raise HTTPException(status_code=503, detail="SAM engine not available")
         
-        result = SAM_ENGINE.count(img)
+        result = SAM_ENGINE.count(
+            img,
+            grid_size=grid_size,
+            confidence_threshold=confidence_threshold,
+            use_adaptive_grid=use_adaptive_grid
+        )
         
         return CountResponse(
             status="success",
             total_objects_found=result.total_objects_found,
-            counts_by_category=result.counts_by_category
+            counts_by_category=result.counts_by_category,
+            processing_time_ms=result.processing_time_ms,
+            confidence_stats=result.confidence_stats
         )
         
     except HTTPException:
@@ -494,6 +546,62 @@ async def count_components(
     except Exception as e:
         logger.error(f"Counting failed: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Counting failed: {str(e)}")
+
+@app.get("/api/v1/metrics", response_model=MetricsResponse)
+async def get_inference_metrics():
+    """
+    Get inference performance metrics
+    
+    Returns:
+        Performance metrics including cache statistics and inference times
+    """
+    try:
+        if SAM_ENGINE is None:
+            return MetricsResponse(
+                status="unavailable",
+                metrics={"message": "SAM engine not initialized"}
+            )
+        
+        metrics = SAM_ENGINE.get_metrics()
+        
+        return MetricsResponse(
+            status="success",
+            metrics=metrics
+        )
+        
+    except Exception as e:
+        logger.error(f"Failed to get metrics: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get metrics: {str(e)}")
+
+@app.post("/api/v1/cache/clear")
+async def clear_cache():
+    """
+    Clear the inference cache
+    
+    This can be useful to free up memory or force re-computation
+    
+    Returns:
+        Status message
+    """
+    try:
+        if SAM_ENGINE is None:
+            raise HTTPException(status_code=503, detail="SAM engine not available")
+        
+        SAM_ENGINE.clear_cache()
+        
+        return JSONResponse(
+            status_code=200,
+            content={
+                "status": "success",
+                "message": "Cache cleared successfully"
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to clear cache: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to clear cache: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn

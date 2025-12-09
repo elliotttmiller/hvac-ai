@@ -3,7 +3,7 @@ HVAC AI Platform - Core Analysis Service
 Intelligent blueprint analysis engine for HVAC systems
 """
 
-from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks
+from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -14,6 +14,9 @@ import os
 import tempfile
 import asyncio
 from datetime import datetime
+import json
+import numpy as np
+import cv2
 
 # Configure logging
 logging.basicConfig(
@@ -116,6 +119,29 @@ class HealthCheckResponse(BaseModel):
     version: str
     services: Dict[str, str]
 
+# SAM-specific models
+class SegmentRequest(BaseModel):
+    """Request model for SAM segmentation"""
+    prompt: str = Field(..., description="JSON string with prompt details")
+
+class SegmentationResult(BaseModel):
+    """Single segmentation result"""
+    label: str
+    score: float
+    mask: str  # Base64 encoded RLE
+    bbox: List[int]  # [x, y, width, height]
+
+class SegmentResponse(BaseModel):
+    """Response model for segmentation"""
+    status: str
+    segments: List[SegmentationResult]
+
+class CountResponse(BaseModel):
+    """Response model for component counting"""
+    status: str
+    total_objects_found: int
+    counts_by_category: Dict[str, int]
+
 # In-memory storage for demo (replace with database in production)
 analysis_results = {}
 estimation_results = {}
@@ -130,6 +156,15 @@ try:
 except ImportError:
     logger.warning("Analysis modules not yet implemented. Using mock responses.")
     MODULES_LOADED = False
+
+# Initialize SAM engine
+SAM_ENGINE = None
+try:
+    from core.ai.sam_inference import create_sam_engine
+    SAM_ENGINE = create_sam_engine()
+    logger.info("SAM inference engine initialized successfully")
+except Exception as e:
+    logger.warning(f"SAM engine initialization failed: {e}. Using mock mode.")
 
 # API Endpoints
 
@@ -348,6 +383,111 @@ async def get_supported_formats():
             for fmt in FileFormat
         ]
     }
+
+@app.post("/api/v1/segment", response_model=SegmentResponse)
+async def segment_component(
+    image: UploadFile = File(...),
+    prompt: str = Form(...)
+):
+    """
+    Interactive segmentation endpoint
+    
+    Segments a single component based on user prompt (e.g., point click).
+    Returns segmentation mask, label, and bounding box.
+    
+    Args:
+        image: Uploaded P&ID or HVAC diagram image
+        prompt: JSON string with prompt details
+               Example: {"type": "point", "data": {"coords": [452, 312], "label": 1}}
+    
+    Returns:
+        Segmentation result with mask, label, score, and bbox
+    """
+    try:
+        # Read and decode image
+        contents = await image.read()
+        nparr = np.frombuffer(contents, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        
+        if img is None:
+            raise HTTPException(status_code=400, detail="Invalid image file")
+        
+        # Parse prompt
+        try:
+            prompt_dict = json.loads(prompt)
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail="Invalid prompt JSON")
+        
+        # Run segmentation
+        if SAM_ENGINE is None:
+            raise HTTPException(status_code=503, detail="SAM engine not available")
+        
+        results = SAM_ENGINE.segment(img, prompt_dict)
+        
+        # Format response
+        segments = [
+            SegmentationResult(
+                label=r.label,
+                score=r.score,
+                mask=r.mask,
+                bbox=r.bbox
+            )
+            for r in results
+        ]
+        
+        return SegmentResponse(
+            status="success",
+            segments=segments
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Segmentation failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Segmentation failed: {str(e)}")
+
+@app.post("/api/v1/count", response_model=CountResponse)
+async def count_components(
+    image: UploadFile = File(...)
+):
+    """
+    Automated component counting endpoint
+    
+    Analyzes entire diagram to identify, classify, and count all recognized components.
+    Uses grid-based prompting with Non-Maximum Suppression for de-duplication.
+    
+    Args:
+        image: Uploaded P&ID or HVAC diagram image
+    
+    Returns:
+        Total count and breakdown by component category
+    """
+    try:
+        # Read and decode image
+        contents = await image.read()
+        nparr = np.frombuffer(contents, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        
+        if img is None:
+            raise HTTPException(status_code=400, detail="Invalid image file")
+        
+        # Run counting
+        if SAM_ENGINE is None:
+            raise HTTPException(status_code=503, detail="SAM engine not available")
+        
+        result = SAM_ENGINE.count(img)
+        
+        return CountResponse(
+            status="success",
+            total_objects_found=result.total_objects_found,
+            counts_by_category=result.counts_by_category
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Counting failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Counting failed: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn

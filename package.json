@@ -22,7 +22,9 @@
     "supabase:link": "supabase link",
     "postbuild": "echo 'Build completed successfully for HVAC AI Platform - Ready for deployment'",
     "test": "jest",
-    "test:watch": "jest --watch"
+    "test:watch": "jest --watch",
+    "setup": "./scripts/setup.sh",
+    "dev:all": "./scripts/dev.sh"
   },
   "dependencies": {
     "@auth/supabase-adapter": "^1.10.0",

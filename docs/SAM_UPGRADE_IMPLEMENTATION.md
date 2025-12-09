@@ -38,7 +38,10 @@ Segments individual components based on user interaction (point clicks).
     {
       "label": "Valve-Ball",
       "score": 0.967,
-      "mask": "base64_encoded_rle_string",
+      "mask": {
+        "size": [1024, 1024],
+        "counts": "eNq1k0..."
+      },
       "bbox": [x, y, width, height],
       "confidence_breakdown": {
         "geometric": 0.92,
@@ -108,25 +111,26 @@ The frontend provides an interactive UI for diagram analysis:
 
 ## RLE Mask Format
 
-The backend encodes masks using COCO RLE (Run-Length Encoding) format for efficient data transfer:
+The backend encodes masks using standard COCO RLE (Run-Length Encoding) format for efficient data transfer:
 
 **Encoding (Backend):**
 ```python
 # 1. Convert binary mask to COCO RLE
 rle = mask_utils.encode(np.asfortranarray(mask))
-# 2. Create string format: "HxW:counts"
-rle_string = f"{rle['size'][0]}x{rle['size'][1]}:{rle['counts']}"
-# 3. Base64 encode for JSON transfer
-mask_encoded = base64.b64encode(rle_string.encode()).decode('utf-8')
+# 2. Convert bytes to string for JSON serialization
+if isinstance(rle['counts'], bytes):
+    rle['counts'] = rle['counts'].decode('utf-8')
+# 3. Return as JSON object
+mask_dict = {"size": rle['size'], "counts": rle['counts']}
 ```
 
 **Decoding (Frontend):**
 ```typescript
-// 1. Decode base64
-const rleString = atob(encodedMask);
-// 2. Parse format: "HxW:counts"
-const [sizeStr, countsStr] = rleString.split(':');
-const [height, width] = sizeStr.split('x').map(Number);
+// 1. Parse JSON object from API response
+const rle = segment.mask;  // {"size": [height, width], "counts": "..."}
+// 2. Extract size and counts
+const [height, width] = rle.size;
+const countsStr = rle.counts;
 // 3. Decode RLE counts (variable-length integers)
 const counts = decodeRLECounts(countsStr);
 // 4. Reconstruct binary mask from runs
@@ -138,6 +142,7 @@ const mask = rleToBinaryMask(counts, height, width);
 - Lossless compression
 - Industry-standard format (COCO dataset)
 - Fast encoding/decoding
+- JSON-native format (no Base64 encoding needed)
 
 ## Model Configuration
 
@@ -201,18 +206,25 @@ low_res_masks, iou_predictions = self.mask_decoder(
 
 ### Component Classification
 
-Multi-stage classification pipeline:
+The system uses a multi-stage classification pipeline to predict component types from the 70-class HVAC taxonomy:
 
 1. **Geometric Classification** (60% weight)
    - Shape analysis (circularity, aspect ratio)
-   - Size-based heuristics
-   - Vertex counting
+   - Size-based heuristics (area, perimeter)
+   - Vertex counting and polygon approximation
+   - Component-specific geometric rules (e.g., pumps are circular, pipes are elongated)
 
 2. **Visual Classification** (40% weight)
-   - Color intensity features
+   - Color intensity features (mean, std)
    - Texture analysis (placeholder for learned features)
+   - Region-specific visual patterns
 
 3. **Combined Scoring**
+   - Weighted average of geometric and visual scores
+   - Returns top prediction with confidence breakdown
+   - Includes alternative predictions (top 3)
+
+**Implementation:** The `_classify_segment_enhanced()` method in `sam_inference.py` implements this logic. It extracts features from the masked region, applies geometric and visual classifiers, and combines scores to produce the final label. All API responses include the predicted label field with real class names from the HVAC_TAXONOMY (e.g., "Valve-Ball", "Equipment-Pump-Centrifugal").
    - Weighted average of geometric and visual scores
    - Returns top prediction with confidence breakdown
    - Includes alternative predictions (top 3)

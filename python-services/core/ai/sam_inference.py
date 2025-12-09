@@ -129,7 +129,7 @@ class SegmentResult:
     """Result from SAM segmentation"""
     label: str
     score: float
-    mask: str  # Base64 encoded RLE
+    mask: Dict[str, Any]  # COCO RLE format: {"size": [height, width], "counts": "..."}
     bbox: List[int]  # [x, y, width, height]
     confidence_breakdown: Optional[Dict[str, float]] = None  # Detailed confidence scores
     alternative_labels: Optional[List[Tuple[str, float]]] = None  # Top-k alternative classifications
@@ -484,9 +484,8 @@ class SAMInferenceEngine:
                     image, binary_mask
                 )
                 
-                # Convert to RLE and encode
-                rle = self._mask_to_rle(binary_mask)
-                rle_base64 = base64.b64encode(rle.encode()).decode('utf-8')
+                # Convert to RLE in standard COCO format (JSON object)
+                rle_dict = self._mask_to_rle(binary_mask)
                 
                 # Calculate bounding box
                 bbox = self._mask_to_bbox(binary_mask)
@@ -494,7 +493,7 @@ class SAMInferenceEngine:
                 results.append(SegmentResult(
                     label=label,
                     score=score,
-                    mask=rle_base64,
+                    mask=rle_dict,
                     bbox=bbox,
                     confidence_breakdown=confidence_breakdown,
                     alternative_labels=alternatives
@@ -887,22 +886,23 @@ class SAMInferenceEngine:
         
         return scores
     
-    def _mask_to_rle(self, mask: np.ndarray) -> str:
+    def _mask_to_rle(self, mask: np.ndarray) -> Dict[str, Any]:
         """
-        Convert binary mask to RLE string
+        Convert binary mask to COCO RLE format
         
         Args:
             mask: Binary mask (H, W)
         
         Returns:
-            RLE encoded string
+            RLE encoded dict in COCO format: {"size": [height, width], "counts": "..."}
         """
         # Fortran order required by COCO
         rle = mask_utils.encode(np.asfortranarray(mask))
-        # Convert bytes to string if needed
+        # Convert bytes to string if needed for JSON serialization
         if isinstance(rle['counts'], bytes):
             rle['counts'] = rle['counts'].decode('utf-8')
-        return f"{rle['size'][0]}x{rle['size'][1]}:{rle['counts']}"
+        # Return standard COCO RLE format as dict
+        return {"size": rle['size'], "counts": rle['counts']}
     
     def _mask_to_bbox(self, mask: np.ndarray) -> List[int]:
         """
@@ -1010,9 +1010,8 @@ class SAMInferenceEngine:
             radius = 30
             cv2.circle(mask, (x, y), radius, 1, -1)
             
-            # Convert to RLE
-            rle = self._mask_to_rle(mask)
-            rle_base64 = base64.b64encode(rle.encode()).decode('utf-8')
+            # Convert to RLE in standard COCO format
+            rle_dict = self._mask_to_rle(mask)
             
             # Calculate bbox
             bbox = [max(0, x - radius), max(0, y - radius), 2 * radius, 2 * radius]
@@ -1034,7 +1033,7 @@ class SAMInferenceEngine:
             return [SegmentResult(
                 label="Valve-Ball",
                 score=0.967,
-                mask=rle_base64,
+                mask=rle_dict,
                 bbox=bbox,
                 confidence_breakdown=confidence_breakdown,
                 alternative_labels=alternatives

@@ -2,26 +2,32 @@
  * RLE (Run-Length Encoding) Decoder for SAM Masks
  * 
  * Decodes masks from the backend SAM inference engine that uses
- * COCO RLE format (pycocotools).
+ * standard COCO RLE format (pycocotools).
  */
 
 /**
- * Decode base64-encoded RLE mask to binary mask array
+ * RLE mask format from backend
+ */
+interface RLEMask {
+    size: [number, number];  // [height, width]
+    counts: string;          // RLE counts string
+}
+
+/**
+ * Decode COCO RLE mask to binary mask array
  * 
- * The backend encodes masks as: base64(f"{height}x{width}:{rle_counts}")
- * where rle_counts is the COCO RLE format (run-length encoded in Fortran order)
+ * The backend sends masks in standard COCO RLE format as a JSON object:
+ * { "size": [height, width], "counts": "..." }
+ * where counts is the COCO RLE format (run-length encoded in Fortran order)
  * 
- * @param encodedMask - Base64-encoded RLE mask string from API
+ * @param rle - RLE mask object from API
  * @returns Binary mask as 2D array where 1 = mask pixel, 0 = background
  */
-export function decodeRLEMask(encodedMask: string): number[][] {
+export function decodeRLEMask(rle: RLEMask): number[][] {
     try {
-        // Decode base64 to get the RLE string
-        const rleString = atob(encodedMask);
-        
-        // Parse format: "HxW:counts"
-        const [sizeStr, countsStr] = rleString.split(':');
-        const [height, width] = sizeStr.split('x').map(Number);
+        // Extract size and counts from the RLE object
+        const [height, width] = rle.size;
+        const countsStr = rle.counts;
         
         if (!height || !width || !countsStr) {
             throw new Error('Invalid RLE format');

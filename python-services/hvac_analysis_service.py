@@ -130,7 +130,7 @@ class SegmentationResult(BaseModel):
     """Single segmentation result"""
     label: str
     score: float
-    mask: str  # Base64 encoded RLE
+    mask: Dict[str, Any]  # COCO RLE format: {"size": [height, width], "counts": "..."}
     bbox: List[int]  # [x, y, width, height]
     confidence_breakdown: Optional[Dict[str, float]] = None
     alternative_labels: Optional[List[Tuple[str, float]]] = None

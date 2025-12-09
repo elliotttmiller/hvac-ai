@@ -122,7 +122,8 @@ class SAMInferenceEngine:
             model_path: Path to fine-tuned SAM model checkpoint
             device: Device to run inference on ('cuda' or 'cpu')
         """
-        self.model_path = model_path or os.getenv('SAM_MODEL_PATH', 'models/sam_hvac_finetuned.pth')
+        default_path = os.path.join(os.path.dirname(__file__), '..', '..', 'models', 'sam_hvac_finetuned.pth')
+        self.model_path = model_path or os.getenv('SAM_MODEL_PATH', os.path.abspath(default_path))
         self.device = device or ('cuda' if torch.cuda.is_available() else 'cpu')
         self.model = None
         self.image_encoder = None
@@ -405,8 +406,9 @@ class SAMInferenceEngine:
         """
         # Mock classification - in production, use a trained classifier
         # This would analyze the masked region features to determine component type
-        import random
-        return random.choice(HVAC_TAXONOMY)
+        # Use deterministic selection based on mask properties for consistent testing
+        mask_sum = int(np.sum(mask))
+        return HVAC_TAXONOMY[mask_sum % len(HVAC_TAXONOMY)]
     
     def _mask_to_rle(self, mask: np.ndarray) -> str:
         """

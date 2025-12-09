@@ -12,8 +12,8 @@ transformers>=4.30.0
 diffusers>=0.21.0
 accelerate>=0.20.0
 
-# Segment Anything Model
-git+https://github.com/facebookresearch/segment-anything.git
+# Segment Anything Model (pinned to stable release)
+git+https://github.com/facebookresearch/segment-anything.git@6fdee8f2727f4506cfbbe553e23b895e27956588
 
 # Image Processing and Computer Vision
 opencv-python>=4.8.0

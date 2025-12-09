@@ -163,8 +163,14 @@ try:
     from core.ai.sam_inference import create_sam_engine
     SAM_ENGINE = create_sam_engine()
     logger.info("SAM inference engine initialized successfully")
+except ImportError as e:
+    logger.warning(f"SAM dependencies not installed: {e}. Using mock mode.")
+except FileNotFoundError as e:
+    logger.warning(f"SAM model file not found: {e}. Using mock mode.")
 except Exception as e:
-    logger.warning(f"SAM engine initialization failed: {e}. Using mock mode.")
+    logger.error(f"SAM engine initialization failed with unexpected error: {e}. Using mock mode.")
+    import traceback
+    logger.debug(traceback.format_exc())
 
 # API Endpoints
 

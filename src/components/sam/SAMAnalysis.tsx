@@ -37,7 +37,7 @@ interface Point {
   y: number;
 }
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
 export default function SAMAnalysis() {
   const [uploadedImage, setUploadedImage] = useState<File | null>(null);
@@ -110,6 +110,11 @@ export default function SAMAnalysis() {
   const handleSegment = async (point: Point) => {
     if (!uploadedImage) return;
 
+    if (!API_BASE_URL) {
+      setError('API URL not configured. Please set NEXT_PUBLIC_API_URL environment variable.');
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
@@ -151,6 +156,11 @@ export default function SAMAnalysis() {
 
   const handleCountAll = async () => {
     if (!uploadedImage) return;
+
+    if (!API_BASE_URL) {
+      setError('API URL not configured. Please set NEXT_PUBLIC_API_URL environment variable.');
+      return;
+    }
 
     setCountLoading(true);
     setError(null);

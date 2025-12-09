@@ -206,18 +206,25 @@ low_res_masks, iou_predictions = self.mask_decoder(
 
 ### Component Classification
 
-Multi-stage classification pipeline:
+The system uses a multi-stage classification pipeline to predict component types from the 70-class HVAC taxonomy:
 
 1. **Geometric Classification** (60% weight)
    - Shape analysis (circularity, aspect ratio)
-   - Size-based heuristics
-   - Vertex counting
+   - Size-based heuristics (area, perimeter)
+   - Vertex counting and polygon approximation
+   - Component-specific geometric rules (e.g., pumps are circular, pipes are elongated)
 
 2. **Visual Classification** (40% weight)
-   - Color intensity features
+   - Color intensity features (mean, std)
    - Texture analysis (placeholder for learned features)
+   - Region-specific visual patterns
 
 3. **Combined Scoring**
+   - Weighted average of geometric and visual scores
+   - Returns top prediction with confidence breakdown
+   - Includes alternative predictions (top 3)
+
+**Implementation:** The `_classify_segment_enhanced()` method in `sam_inference.py` implements this logic. It extracts features from the masked region, applies geometric and visual classifiers, and combines scores to produce the final label. All API responses include the predicted label field with real class names from the HVAC_TAXONOMY (e.g., "Valve-Ball", "Equipment-Pump-Centrifugal").
    - Weighted average of geometric and visual scores
    - Returns top prediction with confidence breakdown
    - Includes alternative predictions (top 3)

@@ -13,7 +13,7 @@ import logging
 import os
 import tempfile
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 import numpy as np
 import cv2
@@ -431,7 +431,7 @@ async def segment_component(
     Returns:
         Segmentation result with mask, label, score, bbox, and confidence details
     """
-    start_time = datetime.utcnow()
+    start_time = datetime.now(datetime.timezone.utc)
     
     try:
         # Read and decode image
@@ -472,7 +472,7 @@ async def segment_component(
             for r in results
         ]
         
-        processing_time = (datetime.utcnow() - start_time).total_seconds() * 1000
+        processing_time = (datetime.now(datetime.timezone.utc) - start_time).total_seconds() * 1000
         
         return SegmentResponse(
             status="success",

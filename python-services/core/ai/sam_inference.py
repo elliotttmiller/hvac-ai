@@ -25,6 +25,30 @@ from pycocotools import mask as mask_utils
 
 logger = logging.getLogger(__name__)
 
+# Configuration constants
+CACHE_DEFAULT_SIZE = 50
+CACHE_EVICTION_POLICY = "LRU"  # Least Recently Used
+
+# Grid processing constants
+GRID_SIZE_LARGE_IMAGE_THRESHOLD = 4000000  # pixels (>2000x2000)
+GRID_SIZE_SMALL_IMAGE_THRESHOLD = 1000000  # pixels (<1000x1000)
+GRID_SIZE_LARGE_IMAGE = 48  # pixels
+GRID_SIZE_SMALL_IMAGE = 24  # pixels
+
+# Classification constants
+CLASSIFICATION_GEOMETRIC_WEIGHT = 0.6
+CLASSIFICATION_VISUAL_WEIGHT = 0.4
+
+# NMS and filtering constants
+NMS_IOU_THRESHOLD = 0.9
+DUPLICATE_MASK_IOU_THRESHOLD = 0.95
+
+# Visual feature thresholds
+COLOR_INTENSITY_HIGH_THRESHOLD = 200
+COLOR_INTENSITY_LOW_THRESHOLD = 50
+VISUAL_SCORE_INCREMENT_HIGH = 0.1
+VISUAL_SCORE_INCREMENT_LOW = 0.05
+
 # Complete taxonomy of HVAC/P&ID components (70 classes)
 HVAC_TAXONOMY = [
     # Valves & Actuators
@@ -146,7 +170,7 @@ class SAMInferenceEngine:
     """
     
     def __init__(self, model_path: Optional[str] = None, device: Optional[str] = None, 
-                 enable_cache: bool = True, cache_size: int = 50):
+                 enable_cache: bool = True, cache_size: int = CACHE_DEFAULT_SIZE):
         """
         Initialize SAM inference engine
         
@@ -248,6 +272,8 @@ class SAMInferenceEngine:
         """
         Compute hash of image for caching
         
+        Uses SHA-256 for better collision resistance than MD5.
+        
         Args:
             image: Input image
             
@@ -257,7 +283,7 @@ class SAMInferenceEngine:
         # Use a sample of the image for faster hashing
         h, w = image.shape[:2]
         sample = image[::max(1, h//32), ::max(1, w//32)].tobytes()
-        return hashlib.md5(sample).hexdigest()
+        return hashlib.sha256(sample).hexdigest()
     
     def _get_cached_embedding(self, image_hash: str) -> Optional[torch.Tensor]:
         """
@@ -328,7 +354,7 @@ class SAMInferenceEngine:
         Returns:
             List of segment results with masks and labels
         """
-        start_time = time.time()
+        start_time = time.perf_counter()
         
         if self.model == "mock_model":
             return self._mock_segment(image, prompt)
@@ -439,7 +465,7 @@ class SAMInferenceEngine:
                     is_unique = True
                     for existing_mask, _ in unique_results:
                         iou = self._calculate_iou(mask > 0.0, existing_mask > 0.0)
-                        if iou > 0.95:  # Very similar masks
+                        if iou > DUPLICATE_MASK_IOU_THRESHOLD:  # Very similar masks
                             is_unique = False
                             break
                     if is_unique:
@@ -475,7 +501,7 @@ class SAMInferenceEngine:
                 ))
             
             # Update metrics
-            inference_time = (time.time() - start_time) * 1000
+            inference_time = (time.perf_counter() - start_time) * 1000
             self.metrics['total_inferences'] += 1
             self.metrics['avg_inference_time_ms'] = (
                 (self.metrics['avg_inference_time_ms'] * (self.metrics['total_inferences'] - 1) + 
@@ -492,7 +518,7 @@ class SAMInferenceEngine:
             raise
     
     def count(self, image: np.ndarray, grid_size: int = 32, confidence_threshold: float = 0.85,
-              nms_iou_threshold: float = 0.9, use_adaptive_grid: bool = True) -> CountResult:
+              nms_iou_threshold: float = NMS_IOU_THRESHOLD, use_adaptive_grid: bool = True) -> CountResult:
         """
         Perform automated component counting on entire diagram
         
@@ -512,7 +538,7 @@ class SAMInferenceEngine:
         Returns:
             Count result with total objects and breakdown by category
         """
-        start_time = time.time()
+        start_time = time.perf_counter()
         
         if self.model == "mock_model":
             return self._mock_count(image)
@@ -525,10 +551,10 @@ class SAMInferenceEngine:
             if use_adaptive_grid:
                 # Adjust grid size based on image size
                 image_area = h * w
-                if image_area > 4000000:  # Large image (> 2000x2000)
-                    grid_size = max(48, grid_size)
-                elif image_area < 1000000:  # Small image (< 1000x1000)
-                    grid_size = min(24, grid_size)
+                if image_area > GRID_SIZE_LARGE_IMAGE_THRESHOLD:  # Large image
+                    grid_size = max(GRID_SIZE_LARGE_IMAGE, grid_size)
+                elif image_area < GRID_SIZE_SMALL_IMAGE_THRESHOLD:  # Small image
+                    grid_size = min(GRID_SIZE_SMALL_IMAGE, grid_size)
                 
                 logger.info(f"Using adaptive grid size: {grid_size}px for image {w}x{h}")
             
@@ -644,7 +670,7 @@ class SAMInferenceEngine:
                 'after_nms': len(unique_detections)
             }
             
-            processing_time = (time.time() - start_time) * 1000
+            processing_time = (time.perf_counter() - start_time) * 1000
             
             logger.info(f"Counting complete: {len(unique_detections)} objects found, "
                        f"time: {processing_time:.1f}ms")
@@ -706,8 +732,11 @@ class SAMInferenceEngine:
             geometric_score = geometric_scores.get(label, 0.0)
             visual_score = visual_scores.get(label, 0.0)
             
-            # Weight: 60% geometric, 40% visual (tunable)
-            combined_scores[label] = 0.6 * geometric_score + 0.4 * visual_score
+            # Weight configuration from constants
+            combined_scores[label] = (
+                CLASSIFICATION_GEOMETRIC_WEIGHT * geometric_score + 
+                CLASSIFICATION_VISUAL_WEIGHT * visual_score
+            )
         
         # Get top-k predictions
         sorted_labels = sorted(combined_scores.items(), key=lambda x: x[1], reverse=True)
@@ -849,10 +878,10 @@ class SAMInferenceEngine:
             # Add small variations based on color intensity
             # (This is a placeholder - real implementation would use learned features)
             color_intensity = np.mean(mean_color)
-            if color_intensity > 200:  # Light colors
-                score += 0.1
-            elif color_intensity < 50:  # Dark colors
-                score += 0.05
+            if color_intensity > COLOR_INTENSITY_HIGH_THRESHOLD:  # Light colors
+                score += VISUAL_SCORE_INCREMENT_HIGH
+            elif color_intensity < COLOR_INTENSITY_LOW_THRESHOLD:  # Dark colors
+                score += VISUAL_SCORE_INCREMENT_LOW
             
             scores[label] = min(1.0, score)
         
@@ -1037,7 +1066,7 @@ class SAMInferenceEngine:
 
 
 def create_sam_engine(model_path: Optional[str] = None, device: Optional[str] = None, 
-                     enable_cache: bool = True, cache_size: int = 50) -> SAMInferenceEngine:
+                     enable_cache: bool = True, cache_size: int = CACHE_DEFAULT_SIZE) -> SAMInferenceEngine:
     """
     Factory function to create SAM inference engine
     

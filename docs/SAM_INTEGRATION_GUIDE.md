@@ -4,6 +4,8 @@
 
 This implementation integrates the fine-tuned Segment Anything Model (SAM) into the HVAC AI Platform, providing powerful AI-driven tools for analyzing P&ID and HVAC diagrams.
 
+**🆕 Recent Enhancements**: See [AI Inference Enhancements](./AI_INFERENCE_ENHANCEMENTS.md) for details on performance improvements, caching, and advanced features.
+
 ## Features
 
 ### 1. Interactive Segmentation (`/api/v1/segment`)
@@ -12,14 +14,29 @@ This implementation integrates the fine-tuned Segment Anything Model (SAM) into 
 - **Inputs**:
   - `image`: Uploaded diagram file
   - `prompt`: JSON string with interaction details (e.g., point click coordinates)
-- **Output**: Segmentation mask (RLE encoded), component label, confidence score, and bounding box
+  - `return_top_k` (optional): Number of top predictions to return (default: 1)
+  - `enable_refinement` (optional): Enable prompt refinement (default: true)
+- **Output**: Segmentation mask (RLE encoded), component label, confidence score, bounding box, and detailed confidence breakdown
 
 ### 2. Automated Component Counting (`/api/v1/count`)
 - **Purpose**: One-click analysis to identify, classify, and count all recognized components
 - **Method**: POST with multipart/form-data
 - **Inputs**:
   - `image`: Uploaded diagram file
-- **Output**: Total object count and breakdown by category
+  - `grid_size` (optional): Grid spacing in pixels (default: 32)
+  - `confidence_threshold` (optional): Minimum confidence score (default: 0.85)
+  - `use_adaptive_grid` (optional): Auto-adjust grid size (default: true)
+- **Output**: Total object count, breakdown by category, processing time, and confidence statistics
+
+### 3. Performance Monitoring (`/api/v1/metrics`)
+- **Purpose**: Track inference performance and cache utilization
+- **Method**: GET
+- **Output**: Metrics including cache hit rate, inference times, and cache size
+
+### 4. Cache Management (`/api/v1/cache/clear`)
+- **Purpose**: Clear the inference cache to free memory
+- **Method**: POST
+- **Output**: Status message
 
 ## Architecture
 
@@ -257,7 +274,7 @@ curl -X POST http://localhost:8000/api/v1/count -F "image=@test.png"
 
 ## Future Enhancements
 
-Potential improvements:
+Potential improvements for future versions:
 - [ ] Real-time RLE mask visualization on canvas
 - [ ] Multi-component selection and batch operations
 - [ ] Advanced filtering and search in count results
@@ -266,6 +283,24 @@ Potential improvements:
 - [ ] Model versioning and A/B testing
 - [ ] Confidence threshold adjustment in UI
 - [ ] Component relationship detection
+
+**✅ Recently Implemented**:
+- [x] Intelligent caching system with LRU eviction
+- [x] Advanced prompt engineering with multi-point sampling
+- [x] Multi-stage classification pipeline (geometric + visual features)
+- [x] Adaptive grid processing for optimized counting
+- [x] Performance monitoring and metrics API
+- [x] Enhanced API responses with confidence breakdowns
+- [x] Model warm-up for optimized first inference
+
+See [AI Inference Enhancements](./AI_INFERENCE_ENHANCEMENTS.md) for complete details.
+
+## Documentation
+
+- **Implementation Guide**: This document
+- **Enhancement Details**: [AI_INFERENCE_ENHANCEMENTS.md](./AI_INFERENCE_ENHANCEMENTS.md)
+- **Usage Examples**: [INFERENCE_USAGE_EXAMPLES.md](./INFERENCE_USAGE_EXAMPLES.md)
+- **API Reference**: See FastAPI docs at `http://localhost:8000/docs`
 
 ## Support
 

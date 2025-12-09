@@ -24,7 +24,10 @@ import { decodeRLEMask, drawMaskOnCanvas } from '@/lib/rle-decoder';
 interface SegmentResult {
   label: string;
   score: number;
-  mask: string;
+  mask: {
+    size: [number, number];
+    counts: string;
+  };
   bbox: number[];
 }
 

@@ -7,7 +7,7 @@ from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks, F
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 from enum import Enum
 import logging
 import os
@@ -431,7 +431,7 @@ async def segment_component(
     Returns:
         Segmentation result with mask, label, score, bbox, and confidence details
     """
-    start_time = datetime.now(datetime.timezone.utc)
+    start_time = datetime.now(timezone.utc)
     
     try:
         # Read and decode image
@@ -472,7 +472,7 @@ async def segment_component(
             for r in results
         ]
         
-        processing_time = (datetime.now(datetime.timezone.utc) - start_time).total_seconds() * 1000
+        processing_time = (datetime.now(timezone.utc) - start_time).total_seconds() * 1000
         
         return SegmentResponse(
             status="success",

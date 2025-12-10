@@ -14,9 +14,11 @@ import os
 import tempfile
 import asyncio
 from datetime import datetime, timezone
+from pathlib import Path
 import json
 import numpy as np
 import cv2
+from dotenv import load_dotenv
 
 # Configure logging
 logging.basicConfig(
@@ -24,6 +26,24 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Load environment configuration
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+ENV_PATH = PROJECT_ROOT / ".env"
+if not ENV_PATH.exists():
+    raise RuntimeError(f"Missing required .env file at {ENV_PATH}")
+
+if not load_dotenv(dotenv_path=ENV_PATH):
+    raise RuntimeError(f"Failed to load environment variables from {ENV_PATH}")
+
+REQUIRED_ENV_VARS = ["MODEL_PATH", "NGROK_AUTHTOKEN"]
+missing_env = [var for var in REQUIRED_ENV_VARS if not os.getenv(var)]
+if missing_env:
+    raise RuntimeError(f"Missing required environment variables: {', '.join(missing_env)}")
+
+# Backward compatibility: propagate MODEL_PATH to SAM_MODEL_PATH if not set
+if not os.getenv("SAM_MODEL_PATH") and os.getenv("MODEL_PATH"):
+    os.environ["SAM_MODEL_PATH"] = os.getenv("MODEL_PATH")
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -173,7 +193,9 @@ except ImportError:
 SAM_ENGINE = None
 try:
     from core.ai.sam_inference import create_sam_engine
-    SAM_ENGINE = create_sam_engine()
+    model_path = os.getenv("SAM_MODEL_PATH")
+    logger.info(f"Loading SAM model from {model_path} (device auto-detected)")
+    SAM_ENGINE = create_sam_engine(model_path=model_path)
     logger.info("SAM inference engine initialized successfully")
 except ImportError as e:
     logger.warning(f"SAM dependencies not installed: {e}. Using mock mode.")
@@ -486,6 +508,23 @@ async def segment_component(
         logger.error(f"Segmentation failed: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Segmentation failed: {str(e)}")
 
+@app.post("/api/analyze", response_model=SegmentResponse)
+async def analyze_component(
+    image: UploadFile = File(...),
+    prompt: str = Form(...),
+    return_top_k: int = Form(1),
+    enable_refinement: bool = Form(True)
+):
+    """
+    Compatibility endpoint for point-based analysis using direct encoder/decoder path.
+    """
+    return await segment_component(
+        image=image,
+        prompt=prompt,
+        return_top_k=return_top_k,
+        enable_refinement=enable_refinement
+    )
+
 @app.post("/api/v1/count", response_model=CountResponse)
 async def count_components(
     image: UploadFile = File(...),
@@ -546,6 +585,21 @@ async def count_components(
     except Exception as e:
         logger.error(f"Counting failed: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Counting failed: {str(e)}")
+
+@app.post("/api/count", response_model=CountResponse)
+async def count_components_v2(
+    image: UploadFile = File(...),
+    grid_size: int = Form(32),
+    confidence_threshold: float = Form(0.85),
+    use_adaptive_grid: bool = Form(True)
+):
+    """Simplified counting endpoint without versioned path."""
+    return await count_components(
+        image=image,
+        grid_size=grid_size,
+        confidence_threshold=confidence_threshold,
+        use_adaptive_grid=use_adaptive_grid
+    )
 
 @app.get("/api/v1/metrics", response_model=MetricsResponse)
 async def get_inference_metrics():

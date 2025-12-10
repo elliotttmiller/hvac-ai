@@ -75,8 +75,10 @@ python-services/
 
 ### AI Analysis
 
-- `POST /api/v1/segment` - Interactive SAM segmentation
-- `POST /api/v1/count` - Automated component counting
+- `POST /api/analyze` - Interactive SAM segmentation (RLE masks)
+- `POST /api/count` - Automated component counting
+- `POST /api/v1/segment` - Legacy interactive segmentation (backward compatible)
+- `POST /api/v1/count` - Legacy counting endpoint
 - `GET /api/v1/metrics` - Performance metrics
 - `POST /api/v1/cache/clear` - Clear inference cache
 
@@ -89,7 +91,9 @@ python-services/
 
 ### Environment Variables
 
-- `SAM_MODEL_PATH` - Path to SAM model file (default: `./models/sam_hvac_finetuned.pth`)
+- `MODEL_PATH` - Path to SAM model file (required)
+- `NGROK_AUTHTOKEN` - ngrok auth token for secure tunneling (required for development)
+- `SAM_MODEL_PATH` - Backward-compatible alias for `MODEL_PATH`
 - `CUDA_VISIBLE_DEVICES` - GPU device ID (default: `0`)
 - `PORT` - Service port (default: `8000`)
 - `HOST` - Service host (default: `0.0.0.0`)

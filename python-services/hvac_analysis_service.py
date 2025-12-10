@@ -189,8 +189,6 @@ SAM_ENGINE = None
 try:
     from core.ai.sam_inference import create_sam_engine
     model_path = os.getenv("MODEL_PATH")
-    if not model_path:
-        raise RuntimeError("MODEL_PATH environment variable is required for SAM initialization")
     logger.info(f"Loading SAM model from {model_path} (device auto-detected)")
     SAM_ENGINE = create_sam_engine(model_path=model_path)
     logger.info("SAM inference engine initialized successfully")

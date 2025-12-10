@@ -450,8 +450,8 @@ class SAMInferenceEngine:
                         align_corners=False
                     )
                     
-                    masks = masks.squeeze(0).cpu().numpy()
-                    scores = iou_predictions.squeeze(0).cpu().numpy()
+                    masks = masks.squeeze().cpu().numpy()
+                    scores = iou_predictions.squeeze().cpu().numpy()
                     if masks.ndim not in (2, 3):
                         raise ValueError(
                             f"Expected mask tensor to have 2 or 3 dimensions (H, W) or (N, H, W), "

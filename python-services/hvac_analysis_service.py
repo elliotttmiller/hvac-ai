@@ -33,8 +33,7 @@ ENV_PATH = PROJECT_ROOT / ".env"
 if not ENV_PATH.exists():
     raise RuntimeError(f"Missing required .env file at {ENV_PATH}")
 
-if not load_dotenv(dotenv_path=ENV_PATH):
-    raise RuntimeError(f"Failed to load environment variables from {ENV_PATH}")
+load_dotenv(dotenv_path=ENV_PATH)
 
 REQUIRED_ENV_VARS = ["MODEL_PATH", "NGROK_AUTHTOKEN"]
 missing_env = [var for var in REQUIRED_ENV_VARS if not os.getenv(var)]
@@ -189,9 +188,7 @@ except ImportError:
 SAM_ENGINE = None
 try:
     from core.ai.sam_inference import create_sam_engine
-    if not os.getenv("SAM_MODEL_PATH") and os.getenv("MODEL_PATH"):
-        os.environ["SAM_MODEL_PATH"] = os.getenv("MODEL_PATH")
-    model_path = os.getenv("SAM_MODEL_PATH")
+    model_path = os.getenv("SAM_MODEL_PATH") or os.getenv("MODEL_PATH")
     logger.info(f"Loading SAM model from {model_path} (device auto-detected)")
     SAM_ENGINE = create_sam_engine(model_path=model_path)
     logger.info("SAM inference engine initialized successfully")

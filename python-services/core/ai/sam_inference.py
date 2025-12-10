@@ -452,6 +452,10 @@ class SAMInferenceEngine:
                     
                     masks = masks.squeeze(0).cpu().numpy()
                     scores = iou_predictions.squeeze(0).cpu().numpy()
+                    if masks.ndim not in (2, 3):
+                        raise ValueError(f"Unexpected mask tensor shape: {masks.shape}")
+                    if scores.ndim > 1:
+                        scores = scores.flatten()
                     if masks.ndim == 2:
                         masks = np.expand_dims(masks, axis=0)
                     if scores.ndim == 0:

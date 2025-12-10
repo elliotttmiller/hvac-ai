@@ -205,8 +205,7 @@ export default function SAMAnalysis() {
     } catch (err: any) {
       const message = err.message || 'Failed to count components';
       setError(message);
-      const toastOptions = toastId !== undefined ? { id: toastId, duration: 5000 } : { duration: 5000 };
-      toast.error(message, toastOptions);
+      toast.error(message, { ...(toastId !== undefined && { id: toastId }), duration: 5000 });
     } finally {
       setCountLoading(false);
     }

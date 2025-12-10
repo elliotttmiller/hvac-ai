@@ -19,6 +19,7 @@ import {
   MousePointerClick,
   FileBarChart
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { decodeRLEMask, drawMaskOnCanvas } from '@/lib/rle-decoder';
 
 interface SegmentResult {
@@ -147,7 +148,7 @@ export default function SAMAnalysis() {
       });
       formData.append('prompt', prompt);
 
-      const response = await fetch(`${API_BASE_URL}/api/v1/segment`, {
+      const response = await fetch(`${API_BASE_URL}/api/analyze`, {
         method: 'POST',
         body: formData,
       });
@@ -181,11 +182,15 @@ export default function SAMAnalysis() {
     setError(null);
     setCountResult(null);
 
+    let toastId: string | number | undefined;
+
     try {
       const formData = new FormData();
       formData.append('image', uploadedImage);
 
-      const response = await fetch(`${API_BASE_URL}/api/v1/count`, {
+      toastId = toast.loading('Analyzing and counting components...', { duration: 0 });
+
+      const response = await fetch(`${API_BASE_URL}/api/count`, {
         method: 'POST',
         body: formData,
       });
@@ -196,8 +201,11 @@ export default function SAMAnalysis() {
 
       const data = await response.json();
       setCountResult(data);
+      toast.success('Counting completed', { id: toastId });
     } catch (err: any) {
-      setError(err.message || 'Failed to count components');
+      const message = err.message || 'Failed to count components';
+      setError(message);
+      toast.error(message, { id: toastId, duration: 5000 });
     } finally {
       setCountLoading(false);
     }

@@ -209,6 +209,7 @@ class SAMInferenceEngine:
     def _load_model(self):
         """Load SAM model into GPU memory at startup"""
         try:
+            logger.info(f"Attempting to load SAM model from {self.model_path}")
             if not os.path.exists(self.model_path):
                 logger.warning(f"Model file not found at {self.model_path}. Using mock mode.")
                 self.model = "mock_model"
@@ -438,7 +439,7 @@ class SAMInferenceEngine:
                         image_pe=self.prompt_encoder.get_dense_pe(),
                         sparse_prompt_embeddings=sparse_embeddings,
                         dense_prompt_embeddings=dense_embeddings,
-                        multimask_output=True
+                        multimask_output=False
                     )
                     
                     # Upscale mask to original size
@@ -451,6 +452,14 @@ class SAMInferenceEngine:
                     
                     masks = masks.squeeze().cpu().numpy()
                     scores = iou_predictions.squeeze().cpu().numpy()
+                    if masks.ndim not in (2, 3):
+                        raise ValueError(f"Expected mask tensor to have 2 or 3 dimensions but got shape: {masks.shape}")
+                    if scores.ndim > 1:
+                        scores = scores.flatten()
+                    if masks.ndim == 2:
+                        masks = np.expand_dims(masks, axis=0)
+                    if scores.ndim == 0:
+                        scores = np.array([float(scores)])
                     
                     # Collect results
                     for mask, score in zip(masks, scores):

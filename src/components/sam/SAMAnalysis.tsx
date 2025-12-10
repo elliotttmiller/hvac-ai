@@ -203,12 +203,10 @@ export default function SAMAnalysis() {
       setCountResult(data);
       toast.success('Counting completed', { id: toastId });
     } catch (err: any) {
-      setError(err.message || 'Failed to count components');
-      if (toastId !== undefined) {
-        toast.error(err.message || 'Failed to count components', { id: toastId, duration: 5000 });
-      } else {
-        toast.error(err.message || 'Failed to count components', { duration: 5000 });
-      }
+      const message = err.message || 'Failed to count components';
+      setError(message);
+      const toastOptions = toastId !== undefined ? { id: toastId, duration: 5000 } : { duration: 5000 };
+      toast.error(message, toastOptions);
     } finally {
       setCountLoading(false);
     }

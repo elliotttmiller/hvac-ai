@@ -454,7 +454,7 @@ class SAMInferenceEngine:
                     scores = iou_predictions.squeeze(0).cpu().numpy()
                     if masks.ndim == 2:
                         masks = np.expand_dims(masks, axis=0)
-                    if np.ndim(scores) == 0:
+                    if scores.ndim == 0:
                         scores = np.array([float(scores)])
                     
                     # Collect results

@@ -41,10 +41,6 @@ missing_env = [var for var in REQUIRED_ENV_VARS if not os.getenv(var)]
 if missing_env:
     raise RuntimeError(f"Missing required environment variables: {', '.join(missing_env)}")
 
-# Backward compatibility: propagate MODEL_PATH to SAM_MODEL_PATH if not set
-if not os.getenv("SAM_MODEL_PATH") and os.getenv("MODEL_PATH"):
-    os.environ["SAM_MODEL_PATH"] = os.getenv("MODEL_PATH")
-
 # Initialize FastAPI app
 app = FastAPI(
     title="HVAC AI Platform",
@@ -193,6 +189,8 @@ except ImportError:
 SAM_ENGINE = None
 try:
     from core.ai.sam_inference import create_sam_engine
+    if not os.getenv("SAM_MODEL_PATH") and os.getenv("MODEL_PATH"):
+        os.environ["SAM_MODEL_PATH"] = os.getenv("MODEL_PATH")
     model_path = os.getenv("SAM_MODEL_PATH")
     logger.info(f"Loading SAM model from {model_path} (device auto-detected)")
     SAM_ENGINE = create_sam_engine(model_path=model_path)

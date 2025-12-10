@@ -188,7 +188,7 @@ except ImportError:
 SAM_ENGINE = None
 try:
     from core.ai.sam_inference import create_sam_engine
-    model_path = os.getenv("SAM_MODEL_PATH") or os.getenv("MODEL_PATH")
+    model_path = os.getenv("MODEL_PATH")
     logger.info(f"Loading SAM model from {model_path} (device auto-detected)")
     SAM_ENGINE = create_sam_engine(model_path=model_path)
     logger.info("SAM inference engine initialized successfully")

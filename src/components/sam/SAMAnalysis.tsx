@@ -179,7 +179,9 @@ export default function SAMAnalysis() {
     if (!uploadedImage) return;
 
     if (!API_BASE_URL) {
-      setError('API URL not configured. Please set NEXT_PUBLIC_API_URL environment variable.');
+      const message = 'API URL not configured. Please set NEXT_PUBLIC_API_URL environment variable.';
+      setError(message);
+      toast.error(message);
       return;
     }
 
@@ -211,6 +213,10 @@ export default function SAMAnalysis() {
       const message = err.message || 'Failed to count components';
       setError(message);
       toast.error(message, { id: toastId, duration: 5000 });
+    } finally {
+      setCountLoading(false);
+    }
+  };
     } finally {
       setCountLoading(false);
     }

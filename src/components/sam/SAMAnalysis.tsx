@@ -80,36 +80,123 @@ export default function SAMAnalysis({
     // 2. Draw all segment masks and labels on top
     segments.forEach((segment, index) => {
       try {
-        const maskArray = decodeRLEMask(segment.mask);
-        if (maskArray.length === 0) return;
-
         const colors: [number, number, number][] = [
           [0, 255, 0], [255, 0, 0], [0, 0, 255], [255, 255, 0], [255, 0, 255], [0, 255, 255]
         ];
         const color = colors[index % colors.length];
 
-        // Draw the mask
-        drawMaskOnCanvas(ctx, maskArray, color, 0.5);
+        // If the backend provided a PNG (base64) for the mask, prefer that for robust rendering
+        if (segment.mask_png) {
+          const maskImg = new Image();
+          try { maskImg.crossOrigin = 'anonymous'; } catch (e) { /* ignore */ }
+          maskImg.src = `data:image/png;base64,${segment.mask_png}`;
 
-        // Draw bounding box and label
-        const [x, y, w, h] = segment.bbox;
-        ctx.strokeStyle = `rgb(${color.join(',')})`;
-        ctx.lineWidth = 2;
-        ctx.strokeRect(x, y, w, h);
-        
-        const labelText = `${segment.label} (${(segment.score * 100).toFixed(1)}%)`;
-        ctx.font = '14px Arial';
-        const textMetrics = ctx.measureText(labelText);
-        const labelWidth = textMetrics.width + 10;
-        const labelHeight = 22;
-        const labelX = Math.max(0, x); // Prevent drawing off-canvas
-        const labelY = Math.max(labelHeight, y); // Prevent drawing off-canvas
+          // If the image hasn't loaded yet, request a redraw once it is available
+          if (!maskImg.complete) {
+            maskImg.onload = () => requestAnimationFrame(drawCanvasContent);
+            maskImg.onerror = () => console.warn('Failed to load mask image for segment', segment.label);
+            return;
+          }
 
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-        ctx.fillRect(labelX, labelY - labelHeight, labelWidth, labelHeight);
-        
-        ctx.fillStyle = 'white';
-        ctx.fillText(labelText, labelX + 5, labelY - 7);
+          const maskWidth = maskImg.naturalWidth || maskImg.width;
+          const maskHeight = maskImg.naturalHeight || maskImg.height;
+          if (!maskWidth || !maskHeight) return;
+
+          const off = document.createElement('canvas');
+          off.width = maskWidth;
+          off.height = maskHeight;
+          const offCtx = off.getContext('2d');
+          if (!offCtx) return;
+
+          // Draw mask image then tint using source-in composite
+          offCtx.clearRect(0, 0, off.width, off.height);
+          offCtx.drawImage(maskImg, 0, 0);
+          offCtx.globalCompositeOperation = 'source-in';
+          offCtx.fillStyle = `rgba(${color[0]}, ${color[1]}, ${color[2]}, 0.45)`;
+          offCtx.fillRect(0, 0, off.width, off.height);
+          offCtx.globalCompositeOperation = 'source-over';
+
+          // Draw the tinted offscreen mask onto the visible canvas, scaling to fit
+          ctx.drawImage(off, 0, 0, canvas.width, canvas.height);
+
+          // Draw bbox scaled from mask-space to canvas-space
+          const [bx, by, bw, bh] = segment.bbox;
+          const scaleX = canvas.width / maskWidth;
+          const scaleY = canvas.height / maskHeight;
+          const sx = bx * scaleX;
+          const sy = by * scaleY;
+          const sw = bw * scaleX;
+          const sh = bh * scaleY;
+
+          ctx.strokeStyle = `rgb(${color.join(',')})`;
+          ctx.lineWidth = Math.max(1, 2 * ((scaleX + scaleY) / 2));
+          ctx.strokeRect(sx, sy, sw, sh);
+
+          const labelText = `${segment.label} (${(segment.score * 100).toFixed(1)}%)`;
+          const fontSize = Math.max(10, Math.round(14 * ((scaleX + scaleY) / 2)));
+          ctx.font = `${fontSize}px Arial`;
+          const textMetrics = ctx.measureText(labelText);
+          const labelWidth = textMetrics.width + 10;
+          const labelHeight = fontSize + 8;
+          const labelX = Math.max(0, sx);
+          const labelY = Math.max(labelHeight, sy);
+
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+          ctx.fillRect(labelX, labelY - labelHeight, labelWidth, labelHeight);
+
+          ctx.fillStyle = 'white';
+          ctx.fillText(labelText, labelX + 5, labelY - (labelHeight - fontSize) / 2 - 2);
+        } else {
+          // Fallback: decode RLE on client (legacy path)
+          const maskArray = decodeRLEMask(segment.mask);
+          if (maskArray.length === 0) return;
+
+          // Mask dimensions
+          const maskHeight = maskArray.length;
+          const maskWidth = maskArray[0]?.length || 0;
+          if (!maskWidth || !maskHeight) return;
+
+          // Create offscreen canvas at mask resolution and draw the mask there
+          const off = document.createElement('canvas');
+          off.width = maskWidth;
+          off.height = maskHeight;
+          const offCtx = off.getContext('2d');
+          if (!offCtx) return;
+
+          // Draw mask into offscreen canvas using existing util
+          drawMaskOnCanvas(offCtx, maskArray, color, 0.4);
+
+          // Now draw the offscreen canvas onto main canvas scaling to current canvas size
+          ctx.drawImage(off, 0, 0, canvas.width, canvas.height);
+
+          // Scale bbox and label positions from mask-space to canvas-space
+          const [bx, by, bw, bh] = segment.bbox;
+          const scaleX = canvas.width / maskWidth;
+          const scaleY = canvas.height / maskHeight;
+          const sx = bx * scaleX;
+          const sy = by * scaleY;
+          const sw = bw * scaleX;
+          const sh = bh * scaleY;
+
+          ctx.strokeStyle = `rgb(${color.join(',')})`;
+          ctx.lineWidth = Math.max(1, 2 * ((scaleX + scaleY) / 2));
+          ctx.strokeRect(sx, sy, sw, sh);
+
+          const labelText = `${segment.label} (${(segment.score * 100).toFixed(1)}%)`;
+          const fontSize = Math.max(10, Math.round(14 * ((scaleX + scaleY) / 2)));
+          ctx.font = `${fontSize}px Arial`;
+          const textMetrics = ctx.measureText(labelText);
+          const labelWidth = textMetrics.width + 10;
+          const labelHeight = fontSize + 8;
+          const labelX = Math.max(0, sx);
+          const labelY = Math.max(labelHeight, sy);
+
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+          ctx.fillRect(labelX, labelY - labelHeight, labelWidth, labelHeight);
+
+          ctx.fillStyle = 'white';
+          ctx.fillText(labelText, labelX + 5, labelY - (labelHeight - fontSize) / 2 - 2);
+        }
       } catch (e) {
         console.error('Failed to draw segment:', segment.label, e);
       }

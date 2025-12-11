@@ -8,6 +8,8 @@ export interface Segment {
   score: number;
   mask: RLEMask;
   bbox: number[];
+  // Optional PNG (base64) representation of the mask produced server-side
+  mask_png?: string;
 }
 
 export interface CountResult {

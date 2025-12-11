@@ -16,6 +16,9 @@ import torch
 from pycocotools import mask as mask_utils
 from segment_anything import sam_model_registry
 from segment_anything.utils.transforms import ResizeLongestSide
+import base64
+import io
+from PIL import Image as PILImage
 
 logger = logging.getLogger(__name__)
 
@@ -186,11 +189,21 @@ class SAMInferenceEngine:
         rle_mask = self._mask_to_rle(binary_mask)
         bbox = self._mask_to_bbox(binary_mask)
 
+        # Also create a PNG (base64) of the binary mask so frontends can render reliably
+        try:
+            pil_mask = PILImage.fromarray((binary_mask * 255).astype(np.uint8))
+            bio = io.BytesIO()
+            pil_mask.save(bio, format='PNG')
+            mask_png_b64 = base64.b64encode(bio.getvalue()).decode('utf-8')
+        except Exception:
+            mask_png_b64 = None
+
         processing_time = (time.perf_counter() - start_time) * 1000
         logger.info(f"Segmentation complete: '{label}' ({score:.2f}), time: {processing_time:.1f}ms")
 
         return [{
-            "label": label, "score": score, "mask": rle_mask, "bbox": bbox
+            "label": label, "score": score, "mask": rle_mask, "bbox": bbox,
+            "mask_png": mask_png_b64
         }]
 
     def count(self, image: np.ndarray, grid_size: int) -> Dict:
@@ -243,14 +256,26 @@ class SAMInferenceEngine:
         # Convert detections into a frontend-friendly 'segments' list (RLE masks + bbox + score + label)
         segments = []
         for det in unique_detections:
+            # det['mask'] is a binary numpy array
             rle = self._mask_to_rle(det['mask'])
             bbox = self._mask_to_bbox(det['mask'])
             label = self._classify_segment(det['mask'])
+
+            # create PNG base64 for robust client-side rendering
+            try:
+                pil_mask = PILImage.fromarray((det['mask'] * 255).astype(np.uint8))
+                bio = io.BytesIO()
+                pil_mask.save(bio, format='PNG')
+                mask_png_b64 = base64.b64encode(bio.getvalue()).decode('utf-8')
+            except Exception:
+                mask_png_b64 = None
+
             segments.append({
                 "label": label,
                 "score": float(det.get('score', 0.0)),
                 "mask": rle,
-                "bbox": bbox
+                "bbox": bbox,
+                "mask_png": mask_png_b64
             })
 
         return {

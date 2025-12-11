@@ -14,6 +14,7 @@ import numpy as np
 import cv2
 import torch
 import torch.nn.functional as F
+import math
 from pycocotools import mask as mask_utils
 from segment_anything import sam_model_registry
 from segment_anything.utils.transforms import ResizeLongestSide
@@ -89,8 +90,61 @@ class SAMInferenceEngine:
                 logger.info("Detected a raw state_dict. Loading directly...")
                 state_dict = checkpoint
 
-            # Load and move to device
-            self.model.load_state_dict(state_dict)
+            # Attempt to load weights; if pos_embed shape mismatches, try to
+            # interpolate the checkpoint positional embeddings to the model's
+            # expected grid. This is common when fine-tuned checkpoints used a
+            # different input size than the runtime model.
+            try:
+                self.model.load_state_dict(state_dict)
+            except RuntimeError as e:
+                logger.warning(f"Initial state_dict load failed: {e}; attempting pos_embed interpolation if applicable...")
+                # Look for an image_encoder positional embedding in the checkpoint
+                ckpt_key = None
+                for k in state_dict.keys():
+                    if k.endswith("image_encoder.pos_embed") or k.endswith("pos_embed") and "image_encoder" in k:
+                        ckpt_key = k
+                        break
+
+                # Fallback: common key used in SAM checkpoints
+                if ckpt_key is None and 'image_encoder.pos_embed' in state_dict:
+                    ckpt_key = 'image_encoder.pos_embed'
+
+                if ckpt_key is not None and hasattr(self.model.image_encoder, 'pos_embed'):
+                    try:
+                        old_pos = state_dict[ckpt_key]
+                        new_pos = self.model.image_encoder.pos_embed.data
+
+                        if old_pos.shape != new_pos.shape:
+                            logger.info(f"Interpolating pos_embed from {old_pos.shape} to {new_pos.shape}")
+
+                            # Separate cls token if present
+                            cls_token = old_pos[:, :1, :]
+                            grid_tokens = old_pos[:, 1:, :]
+
+                            old_num = grid_tokens.shape[1]
+                            old_size = int(math.sqrt(old_num))
+                            new_num = new_pos.shape[1] - 1
+                            new_size = int(math.sqrt(new_num))
+
+                            grid_tokens = grid_tokens.reshape(1, old_size, old_size, -1).permute(0, 3, 1, 2)
+                            # bicubic interpolation for positional embeddings
+                            grid_tokens = F.interpolate(grid_tokens, size=(new_size, new_size), mode='bicubic', align_corners=False)
+                            grid_tokens = grid_tokens.permute(0, 2, 3, 1).reshape(1, new_size * new_size, -1)
+
+                            new_pos_tensor = torch.cat([cls_token, grid_tokens], dim=1)
+                            state_dict[ckpt_key] = new_pos_tensor
+                            # try load again
+                            self.model.load_state_dict(state_dict)
+                            logger.info("Positional embedding interpolation succeeded and checkpoint loaded.")
+                        else:
+                            # shapes already match but load failed for other reasons
+                            raise
+                    except Exception as ex:
+                        logger.error(f"Positional embedding interpolation failed: {ex}")
+                        raise
+                else:
+                    # No pos_embed key to try; re-raise original error
+                    raise
             self.model.to(device=self.device)
             self.model.eval()
 
@@ -105,6 +159,15 @@ class SAMInferenceEngine:
         try:
             logger.info("Warming up model...")
             dummy_image = np.random.randint(0, 255, (256, 256, 3), dtype=np.uint8)
+            # Log encoder expected size and pos_embed shape for diagnostics
+            try:
+                pe = getattr(self.model.image_encoder, 'pos_embed', None)
+                if pe is not None:
+                    logger.info(f"Model image_encoder.pos_embed shape: {tuple(pe.shape)}")
+                logger.info(f"Model image_encoder.img_size: {getattr(self.model.image_encoder, 'img_size', 'unknown')}")
+            except Exception:
+                logger.debug("Could not read model.pos_embed during warm-up")
+
             self._get_image_embedding(dummy_image)
             logger.info("✅ Model warm-up complete")
         except Exception as e:

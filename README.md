@@ -15,13 +15,17 @@ An enterprise-grade platform combining Next.js frontend with Python AI services 
 ## Quick Start
 
 ```bash
-# Install dependencies
+# 1. Install dependencies
 npm install
-cd python-services && pip install -r requirements.txt
+cd python-services && pip install -r requirements.txt && cd ..
 
-# Run development servers
+# 2. Configure environment
+cp .env.example .env
+# Edit .env and fill in your values (see Getting Started guide)
+
+# 3. Run development servers
 npm run dev                      # Frontend (port 3000)
-python hvac_analysis_service.py  # Backend (port 8000)
+cd python-services && python hvac_analysis_service.py  # Backend (port 8000)
 ```
 
 ## Documentation

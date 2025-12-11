@@ -29,6 +29,32 @@ pip install -r requirements.txt
 cd ..
 ```
 
+### 4. Configure Environment Variables
+
+**Required:** Copy the example environment file and configure your settings:
+
+```bash
+# Copy the example file
+cp .env.example .env
+
+# Edit .env and fill in the required values:
+# - MODEL_PATH: Path to your SAM model file (default: ./models/sam_hvac_finetuned.pth)
+# - NGROK_AUTHTOKEN: Your ngrok authentication token for secure tunneling
+# - NEXT_PUBLIC_API_URL: Backend API URL (default: http://localhost:8000)
+```
+
+**Important Environment Variables:**
+
+| Variable | Description | Required | Default |
+|----------|-------------|----------|---------|
+| `MODEL_PATH` | Path to SAM model checkpoint | Yes | `./models/sam_hvac_finetuned.pth` |
+| `NGROK_AUTHTOKEN` | Ngrok auth token for tunneling | Yes | - |
+| `NEXT_PUBLIC_API_URL` | Frontend API base URL | Yes | `http://localhost:8000` |
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL | No | - |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anonymous key | No | - |
+
+> **Note:** The `.env.example` file contains all available configuration options with placeholder values. Never commit your actual `.env` file to version control.
+
 ## Running the Platform
 
 ### Option 1: Using Startup Scripts

@@ -128,7 +128,9 @@ export default function SAMAnalysis() {
     if (!uploadedImage) return;
 
     if (!API_BASE_URL) {
-      setError('API URL not configured. Please set NEXT_PUBLIC_API_URL environment variable.');
+      const message = 'API URL not configured. Please set NEXT_PUBLIC_API_URL environment variable.';
+      setError(message);
+      toast.error(message);
       return;
     }
 
@@ -162,9 +164,12 @@ export default function SAMAnalysis() {
       // Add new segments to the list (keep previous ones)
       if (data.segments && data.segments.length > 0) {
         setSegments(prev => [...prev, ...data.segments]);
+        toast.success(`Segmented: ${data.segments[0].label}`);
       }
     } catch (err: any) {
-      setError(err.message || 'Failed to segment component');
+      const message = err.message || 'Failed to segment component';
+      setError(message);
+      toast.error(message);
     } finally {
       setLoading(false);
     }

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { useDropzone } from 'react-dropzone';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -127,6 +128,23 @@ export default function HVACBlueprintUploader({ onAnalysisComplete }: HVACBluepr
     return (typeof secs === 'number') ? secs.toFixed(decimals) : (0).toFixed(decimals);
   };
 
+  // Small sub-component to handle safe navigation to the analysis details page
+  function ViewResultsButton({ result }: { result: AnalysisResult }) {
+    const router = useRouter();
+    const analysisId = result?.analysis_id;
+
+    const handleClick = () => {
+      if (!analysisId) return; // guard
+      router.push(`/analysis/${analysisId}`);
+    };
+
+    return (
+      <Button className="w-full" onClick={handleClick} disabled={!analysisId}>
+        <DollarSign className="mr-2 h-4 w-4" />View Detailed Results & Generate Estimate
+      </Button>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <Card>
@@ -213,7 +231,7 @@ export default function HVACBlueprintUploader({ onAnalysisComplete }: HVACBluepr
         <Card>
           <CardHeader>
             <CardTitle>Analysis Results</CardTitle>
-            <CardDescription>Blueprint: {result.file_name} | Analysis ID: {result.analysis_id}</CardDescription>
+            <CardDescription>Blueprint: {result.file_name} | Analysis ID: {result.analysis_id || 'N/A'}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -230,9 +248,7 @@ export default function HVACBlueprintUploader({ onAnalysisComplete }: HVACBluepr
                 <p className="text-2xl font-bold">{formatProcessingTime(result, 1)}s</p>
               </div>
             </div>
-            <Button className="w-full" onClick={() => { window.location.href = `/analysis/${result.analysis_id}`; }}>
-              <DollarSign className="mr-2 h-4 w-4" />View Detailed Results & Generate Estimate
-            </Button>
+            <ViewResultsButton result={result} />
           </CardContent>
         </Card>
       )}

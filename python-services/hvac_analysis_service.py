@@ -3,6 +3,7 @@
 from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+import uuid
 import numpy as np
 from PIL import Image
 import os
@@ -94,6 +95,7 @@ async def segment_component(image: UploadFile = File(...), coords: str = Form(..
 
         return {
             "status": "success",
+            "analysis_id": uuid.uuid4().hex,
             "segments": results,
             "total_components": total_components,
             "processing_time_ms": processing_time_ms,
@@ -123,9 +125,10 @@ async def count_components(image: UploadFile = File(...), grid_size: int = Form(
         total_components = None
         if isinstance(result, dict):
             # preserve existing keys but add aliases for frontend
-            total_components = result.get("total_objects_found") or result.get("total_components")
+            # prefer explicit key if present, allow 0 as valid count
+            total_components = result.get("total_objects_found") if result.get("total_objects_found") is not None else result.get("total_components")
 
-        response = {"status": "success", **(result if isinstance(result, dict) else {} )}
+        response = {"status": "success", "analysis_id": uuid.uuid4().hex, **(result if isinstance(result, dict) else {} )}
         if processing_time_ms is not None:
             response["processing_time_seconds"] = processing_time_seconds
         if total_components is not None:

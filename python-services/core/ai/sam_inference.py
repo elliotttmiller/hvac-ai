@@ -225,7 +225,7 @@ class SAMInferenceEngine:
                 )
                 
                 score = iou_predictions.squeeze().item()
-                if score > 0.85: # Confidence threshold
+                if score > 0.50: # Confidence threshold
                     mask = self.model.postprocess_masks(low_res_masks, (1024, 1024), original_size)
                     binary_mask = (mask.squeeze().cpu().numpy() > 0.0).astype(np.uint8)
                     all_detections.append({'mask': binary_mask, 'score': score})

@@ -13,6 +13,7 @@ from collections import Counter
 import numpy as np
 import cv2
 import torch
+import torch.nn.functional as F
 from pycocotools import mask as mask_utils
 from segment_anything import sam_model_registry
 from segment_anything.utils.transforms import ResizeLongestSide
@@ -137,6 +138,27 @@ class SAMInferenceEngine:
             input_tensor = (input_tensor - pixel_mean) / pixel_std
 
             # Ensure input has shape [B, C, H, W] for the image encoder
+            # The SAM ViT expects a consistent patch grid determined by the
+            # image encoder's configured `img_size`. Resize or pad the tensor
+            # so that both H and W equal that expected size. This prevents
+            # positional embedding mismatches when images aren't square.
+            target_size = getattr(self.model.image_encoder, "img_size", 1024)
+            _, H, W = input_tensor.shape
+
+            # If the tensor is larger than expected, downsample. If smaller
+            # on one axis (ResizeLongestSide keeps the longest side==target_size),
+            # pad the short axis to make a square input.
+            if H != target_size or W != target_size:
+                logger.debug(f"Adjusting image tensor from (H={H},W={W}) to target (H=W={target_size})")
+                # If either dimension is larger than target -> resize down
+                if H > target_size or W > target_size:
+                    input_tensor = F.interpolate(input_tensor.unsqueeze(0), size=(target_size, target_size), mode='bilinear', align_corners=False).squeeze(0)
+                else:
+                    pad_h = target_size - H
+                    pad_w = target_size - W
+                    # pad = (pad_left, pad_right, pad_top, pad_bottom)
+                    input_tensor = F.pad(input_tensor, (0, pad_w, 0, pad_h), value=0.0)
+
             embedding = self.model.image_encoder(input_tensor.unsqueeze(0))
 
         # 4) Store in cache with simple eviction policy

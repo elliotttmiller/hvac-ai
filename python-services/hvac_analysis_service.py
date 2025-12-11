@@ -1,6 +1,6 @@
 # python-services/hvac_analysis_service.py
 
-from fastapi import FastAPI, File, UploadFile, HTTPException, Form
+from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import numpy as np
@@ -9,6 +9,7 @@ import os
 from dotenv import load_dotenv
 from pathlib import Path
 import logging
+import traceback
 import io
 
 # --- 1. CONFIGURATION & LOGGING ---
@@ -50,6 +51,22 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    """Log incoming requests and any unhandled exceptions with a traceback.
+    This helps when running the server in Colab so the cell output shows full context.
+    """
+    logger.info(f"Incoming request: {request.method} {request.url}")
+    try:
+        response = await call_next(request)
+        logger.info(f"Response: {response.status_code} for {request.method} {request.url}")
+        return response
+    except Exception as exc:
+        tb = traceback.format_exc()
+        logger.error(f"Unhandled exception for {request.method} {request.url}: {exc}\n{tb}")
+        raise
 
 # --- 5. API ENDPOINTS ---
 @app.post("/api/v1/segment")

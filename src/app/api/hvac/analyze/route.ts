@@ -22,26 +22,43 @@ export async function POST(request: NextRequest) {
 
     // Build python form data
     const pythonFormData = new FormData();
-    // Python service expects 'file' as the upload field
-    pythonFormData.append('file', incomingFile);
+    // Python service expects the file under the 'image' field
+    pythonFormData.append('image', incomingFile);
 
     let targetUrl = '';
 
     if (coords || prompt) {
-      // Segment request — build a prompt JSON containing coords if provided
-      const promptObj = prompt ? JSON.parse(prompt as string) : {}
-      if (coords && !promptObj['coords']) {
-        // coords expected as "x,y"
-        const [x, y] = (coords as string).split(',').map(s => parseInt(s, 10));
-        promptObj['coords'] = { x, y };
+      // Segment request — backend expects 'coords' as a string "x,y"
+      if (coords) {
+        pythonFormData.append('coords', coords as string);
+      } else if (prompt) {
+        // If the frontend sent a prompt that includes coords, try to extract
+        try {
+          const promptObj = JSON.parse(prompt as string);
+          if (promptObj && promptObj.coords) {
+            // support either {coords: [x,y]} or {coords: {x,y}}
+            if (Array.isArray(promptObj.coords)) {
+              pythonFormData.append('coords', `${promptObj.coords[0]},${promptObj.coords[1]}`);
+            } else if (typeof promptObj.coords === 'object' && 'x' in promptObj.coords && 'y' in promptObj.coords) {
+              pythonFormData.append('coords', `${promptObj.coords.x},${promptObj.coords.y}`);
+            }
+          } else {
+            // As a fallback, forward the whole prompt under 'prompt' in case backend handles it
+            pythonFormData.append('prompt', JSON.stringify(promptObj));
+          }
+        } catch (e) {
+          // If prompt isn't JSON, forward as-is
+          pythonFormData.append('prompt', prompt as string);
+        }
       }
-      pythonFormData.append('prompt', JSON.stringify(promptObj));
+
       if (returnTopK) pythonFormData.append('return_top_k', returnTopK as string);
 
       targetUrl = `${PYTHON_SERVICE_URL}/api/v1/segment`;
     } else {
-      // Count request — send an empty prompt
-      pythonFormData.append('prompt', JSON.stringify({}));
+      // Count request — backend expects optional 'grid_size' form field
+      const gridSize = formData.get('grid_size') as string | null;
+      if (gridSize) pythonFormData.append('grid_size', gridSize);
       targetUrl = `${PYTHON_SERVICE_URL}/api/v1/count`;
     }
 

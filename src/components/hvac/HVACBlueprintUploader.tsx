@@ -2,10 +2,12 @@
 
 import React, { useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import type { AnalysisResult, Segment } from '@/types/analysis';
 import { useDropzone } from 'react-dropzone';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
+import dynamic from 'next/dynamic';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Input } from '@/components/ui/input';
@@ -26,17 +28,9 @@ interface UploadedFile {
   file: File;
 }
 
-interface AnalysisResult {
-  analysis_id: string;
-  status: string;
-  file_name: string;
-  detected_components: unknown[];
-  total_components: number;
-  // The backend returns processing time in milliseconds as `processing_time_ms`.
-  // Keep processing_time_seconds for backward compatibility if present.
-  processing_time_ms?: number;
-  processing_time_seconds?: number;
-}
+// Reuse a small, explicit shape for segment results to avoid `any` usage
+
+// AnalysisResult and Segment types are imported from src/types/analysis.ts
 
 interface HVACBlueprintUploaderProps {
   onAnalysisComplete?: (result: AnalysisResult) => void;
@@ -118,6 +112,8 @@ export default function HVACBlueprintUploader({ onAnalysisComplete }: HVACBluepr
     setError(null);
     setProgress(0);
   };
+
+  const SAMAnalysis = dynamic(() => import('@/components/sam/SAMAnalysis'), { ssr: false });
 
   // Helper to normalize processing time to seconds and format safely
   const formatProcessingTime = (r: AnalysisResult | null, decimals = 2) => {
@@ -234,6 +230,15 @@ export default function HVACBlueprintUploader({ onAnalysisComplete }: HVACBluepr
             <CardDescription>Blueprint: {result.file_name} | Analysis ID: {result.analysis_id || 'N/A'}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            {/* Render SAMAnalysis inline so users can interact without navigation */}
+            <div className="mb-4">
+              <SAMAnalysis
+                initialImage={uploadedFile?.file ?? null}
+                initialSegments={result.segments ?? undefined}
+                initialCount={result.counts_by_category ? { total_objects_found: (result.total_components ?? result.total_objects_found ?? 0), counts_by_category: result.counts_by_category } : undefined}
+              />
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="p-4 border rounded-lg">
                 <div className="flex items-center gap-2 mb-2"><Wind className="h-5 w-5 text-blue-500" /><span className="text-sm font-medium">Components</span></div>

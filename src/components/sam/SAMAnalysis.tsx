@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
+import type { RLEMask, Segment, CountResult } from '@/types/analysis';
 import { useDropzone } from 'react-dropzone';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -22,34 +23,25 @@ import { toast } from 'sonner';
 import { decodeRLEMask, drawMaskOnCanvas } from '@/lib/rle-decoder';
 
 // --- Type Definitions ---
-interface RLEMask {
-  size: [number, number];
-  counts: string;
-}
-
-interface SegmentResult {
-  label: string;
-  score: number;
-  mask: RLEMask;
-  bbox: number[];
-}
-
-interface CountResult {
-  total_objects_found: number;
-  counts_by_category: Record<string, number>;
-}
-
 type AnalysisState = 'idle' | 'segmenting' | 'counting';
 
 // --- API Configuration ---
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || '';
 
-export default function SAMAnalysis() {
+export default function SAMAnalysis({
+  initialImage,
+  initialSegments,
+  initialCount
+}: {
+  initialImage?: File | null;
+  initialSegments?: Segment[];
+  initialCount?: CountResult | null;
+}) {
   // --- State Management ---
   const [uploadedImage, setUploadedImage] = useState<File | null>(null);
   const [analysisState, setAnalysisState] = useState<AnalysisState>('idle');
   const [error, setError] = useState<string | null>(null);
-  const [segments, setSegments] = useState<SegmentResult[]>([]);
+  const [segments, setSegments] = useState<Segment[]>([]);
   const [countResult, setCountResult] = useState<CountResult | null>(null);
   const [clickMode, setClickMode] = useState(false);
 
@@ -144,6 +136,20 @@ export default function SAMAnalysis() {
     }
   }, [uploadedImage, drawCanvasContent]);
 
+  // If parent provided initial props, initialize internal state on mount
+  useEffect(() => {
+    if (initialImage) {
+      setUploadedImage(initialImage);
+    }
+    if (initialSegments && initialSegments.length > 0) {
+      setSegments(initialSegments);
+    }
+    if (initialCount) {
+      setCountResult(initialCount);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Re-draw canvas whenever segments change
   useEffect(() => {
     requestAnimationFrame(drawCanvasContent);
@@ -198,7 +204,8 @@ export default function SAMAnalysis() {
 
       const data = await response.json();
       if (data.segments && data.segments.length > 0) {
-        setSegments(prev => [...prev, ...data.segments]);
+        // coerce to Segment[]
+        setSegments(prev => [...prev, ...data.segments as Segment[]]);
         toast.success(`Segmented: ${data.segments[0].label}`);
       } else {
         toast.info('No object found at this location.');
@@ -237,8 +244,8 @@ export default function SAMAnalysis() {
       }
 
       const data = await response.json();
-      setCountResult(data);
-      toast.success(`Analysis complete. Found ${data.total_objects_found} objects.`, { id: toastId });
+  setCountResult(data as CountResult);
+  toast.success(`Analysis complete. Found ${data.total_objects_found} objects.`, { id: toastId });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       setError(message);

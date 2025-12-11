@@ -26,11 +26,21 @@ export class ConstructionAIService {
   }
 
   // Placeholder for custom AI model integration
-  async processRequest(message: string, context?: any): Promise<AIResponse> {
+  async processRequest(message: string, context?: unknown): Promise<AIResponse> {
     // Implement custom AI logic here
     return {
       content: "Custom AI response placeholder.",
       model: "custom-ai-model",
     };
   }
+}
+
+export async function deleteProject(id: string) {
+  const res = await fetch(`/api/projects?id=${id}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    throw new Error('Failed to delete project');
+  }
+  return res.json();
 }

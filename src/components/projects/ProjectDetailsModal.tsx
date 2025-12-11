@@ -15,9 +15,14 @@ interface Project {
   estimatedCost?: number;
   date?: string;
   climateZone?: string;
+  description?: string;
+  uploadedAt?: string;
+  analysisDate?: string;
+  estimateUpdated?: string;
 }
 
-export default function ProjectDetailsModal({ project, open, onOpenChange }: { project: Project | null; open: boolean; onOpenChange: (v: boolean) => void; }) {
+
+export default function ProjectDetailsModal({ project, open, onOpenChange, onDelete }: { project: Project | null; open: boolean; onOpenChange: (v: boolean) => void; onDelete?: (id: string) => void; }) {
   if (!project) return null;
 
   // Helper: friendly date
@@ -29,6 +34,10 @@ export default function ProjectDetailsModal({ project, open, onOpenChange }: { p
     <Dialog open={open} onOpenChange={onOpenChange}>
       {/* Make the overlay + content cover the viewport; internal card is scrollable and centered */}
       <DialogContent className="inset-0 left-0 top-0 translate-x-0 translate-y-0 w-full h-full max-w-none sm:rounded-none p-0">
+        <DialogTitle>{project.name}</DialogTitle>
+        <DialogDescription>
+          View and manage project details. You can delete this project below.
+        </DialogDescription>
         <div className="mx-auto my-6 w-full max-w-7xl h-[calc(100vh-3rem)] overflow-hidden rounded-lg bg-popover shadow-lg ring-1 ring-border flex flex-col">
 
           {/* Header */}
@@ -97,7 +106,7 @@ export default function ProjectDetailsModal({ project, open, onOpenChange }: { p
                 {/* Overview / Description */}
                 <section className="bg-background p-4 rounded shadow-sm">
                   <h4 className="text-lg font-semibold">Overview</h4>
-                  <p className="mt-2 text-sm text-muted-foreground">{(project as any).description ?? 'No description provided for this project.'}</p>
+                  <p className="mt-2 text-sm text-muted-foreground">{project.description ?? 'No description provided for this project.'}</p>
                 </section>
 
                 {/* Analytics & Estimate breakdown */}
@@ -116,9 +125,9 @@ export default function ProjectDetailsModal({ project, open, onOpenChange }: { p
                   <div className="bg-background p-4 rounded shadow-sm h-48">
                     <h5 className="font-medium">Recent Activity</h5>
                     <ul className="mt-3 space-y-2 text-sm text-muted-foreground">
-                      <li>Blueprint uploaded — {friendlyDate((project as any).uploadedAt)}</li>
-                      <li>Analysis run — {friendlyDate((project as any).analysisDate)}</li>
-                      <li>Estimate updated — {friendlyDate((project as any).estimateUpdated)}</li>
+                      <li>Blueprint uploaded — {friendlyDate(project.uploadedAt)}</li>
+                      <li>Analysis run — {friendlyDate(project.analysisDate)}</li>
+                      <li>Estimate updated — {friendlyDate(project.estimateUpdated)}</li>
                     </ul>
                   </div>
                 </section>
@@ -146,7 +155,19 @@ export default function ProjectDetailsModal({ project, open, onOpenChange }: { p
                     <Button>Upload Blueprint</Button>
                   </Link>
                   <Button variant="outline">Export</Button>
-                  <Button variant="destructive">Delete Project</Button>
+                  <Button
+                    variant="destructive"
+                    onClick={() => {
+                      if (!project.id) return;
+                      if (!window.confirm('Are you sure you want to delete this project? This action cannot be undone.')) return;
+                      if (onDelete) {
+                        onDelete(project.id);
+                      }
+                      onOpenChange(false);
+                    }}
+                  >
+                    Delete Project
+                  </Button>
                 </div>
               </main>
             </div>

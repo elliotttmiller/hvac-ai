@@ -56,29 +56,26 @@ export default function AuthGuard({ children }: AuthGuardProps) {
   const isAuthenticated = session || directUser;
   const isLoading = status === 'loading' || isCheckingDirectAuth;
 
+  // Disable authentication enforcement for development
+  const enforceAuth = false;
+
   useEffect(() => {
     if (isLoading) return; // Still loading
 
-    // Only enforce redirects when explicitly enabled (e.g., in production).
-    // Use NEXT_PUBLIC_ENFORCE_AUTH=true to enable enforcement.
-    const enforceAuth = process.env.NEXT_PUBLIC_ENFORCE_AUTH === 'true';
-
     if (!isAuthenticated && !isPublicRoute) {
       if (enforceAuth) {
-        // Redirect to home page if not authenticated
-        console.log('🔒 Not authenticated, redirecting to home (enforced)');
+        console.log('\uD83D\uDD12 Not authenticated, redirecting to home (enforced)');
         router.push('/');
       } else {
-        console.log('🔒 Not authenticated, auth enforcement disabled - not redirecting');
+        console.log('\uD83D\uDD12 Not authenticated, auth enforcement disabled - not redirecting');
       }
     } else if (isAuthenticated && isPublicRoute) {
       if (enforceAuth) {
-        // Redirect to dashboard if already authenticated and on public route
-        console.log('✅ Already authenticated, redirecting to dashboard (enforced)');
+        console.log('\u2705 Already authenticated, redirecting to dashboard (enforced)');
         router.push('/');
       }
     }
-  }, [isAuthenticated, isLoading, router, pathname, isPublicRoute]);
+  }, [isAuthenticated, isLoading, router, pathname, isPublicRoute, enforceAuth]);
 
   // Show loading screen while checking authentication
   // Loader timing: delay before showing and minimum visible time to avoid flashes

@@ -33,16 +33,25 @@ export async function POST(request: NextRequest) {
       }
     );
 
+    // Read response safely: some endpoints (or ngrok) may return HTML on error
+    const contentType = response.headers.get('content-type') || '';
+    const isJson = contentType.includes('application/json');
+
     if (!response.ok) {
-      const error = await response.json();
+      const raw = isJson ? await response.json().catch(() => null) : await response.text().catch(() => null);
+      const message = raw && typeof raw === 'object' ? (raw.detail || JSON.stringify(raw)) : String(raw || 'Analysis failed');
+      console.error('Python service error', response.status, message);
       return NextResponse.json(
-        { error: error.detail || 'Analysis failed' },
+        { error: message },
         { status: response.status }
       );
     }
 
-    const data = await response.json();
-    return NextResponse.json(data);
+    const data = isJson ? await response.json() : await response.text();
+    // If we got text back (HTML), include it under `raw` so frontend can show diagnostic info
+    return NextResponse.json(
+      isJson ? data : { raw: data }
+    );
 
   } catch (error) {
     console.error('Blueprint analysis error:', error);

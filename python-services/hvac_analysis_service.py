@@ -173,33 +173,28 @@ class MetricsResponse(BaseModel):
 analysis_results = {}
 estimation_results = {}
 
-# Import analysis modules (to be implemented)
-try:
-    from .core import document_processor
-    from .core import ai_engine
-    from .core import location_intelligence
-    from .core import estimation_engine
-    MODULES_LOADED = True
-except ImportError:
-    logger.warning("Analysis modules not yet implemented. Using mock responses.")
-    MODULES_LOADED = False
+# Import the SAMEngine factory from the new module. We intentionally
+# validate model presence at startup and fail loudly if the model cannot
+# be found or validated so users get a clear error in Colab/production.
+from core.ai.sam_inference import create_sam_engine
 
-# Initialize SAM engine
+# Global engine reference populated on startup
 SAM_ENGINE = None
-try:
-    from core.ai.sam_inference import create_sam_engine
+
+
+@app.on_event("startup")
+async def startup_initialize_sam():
+    global SAM_ENGINE
     model_path = os.getenv("MODEL_PATH")
-    logger.info(f"Loading SAM model from {model_path} (device auto-detected)")
+    if not model_path:
+        logger.error("MODEL_PATH environment variable is required")
+        raise RuntimeError("MODEL_PATH environment variable is required")
+
+    logger.info(f"Initializing SAMEngine from {model_path}")
+    # create_sam_engine will raise a clear exception if the model is
+    # missing or cannot be read; we allow that to bubble so startup fails.
     SAM_ENGINE = create_sam_engine(model_path=model_path)
-    logger.info("SAM inference engine initialized successfully")
-except ImportError as e:
-    logger.warning(f"SAM dependencies not installed: {e}. Using mock mode.")
-except FileNotFoundError as e:
-    logger.warning(f"SAM model file not found: {e}. Using mock mode.")
-except Exception as e:
-    logger.error(f"SAM engine initialization failed with unexpected error: {e}. Using mock mode.")
-    import traceback
-    logger.debug(traceback.format_exc())
+    logger.info("SAMEngine initialized")
 
 # API Endpoints
 
@@ -221,105 +216,40 @@ async def health_check():
         timestamp=datetime.utcnow().isoformat(),
         version="0.1.0",
         services={
-            "document_processor": "operational" if MODULES_LOADED else "not_loaded",
-            "ai_engine": "operational" if MODULES_LOADED else "not_loaded",
-            "location_intelligence": "operational" if MODULES_LOADED else "not_loaded",
-            "estimation_engine": "operational" if MODULES_LOADED else "not_loaded"
+            "sam_engine": "operational" if SAM_ENGINE is not None else "not_initialized"
         }
     )
 
-@app.post("/api/analyze/blueprint", response_model=BlueprintAnalysisResponse)
-async def analyze_blueprint(
+@app.post("/api/v1/segment", response_model=SegmentResponse)
+async def segment_endpoint(
     file: UploadFile = File(...),
-    background_tasks: BackgroundTasks = None,
-    project_id: str = "default",
-    location: Optional[str] = None
+    prompt: str = Form(...),
+    return_top_k: int = Form(1)
 ):
-    """
-    Analyze uploaded HVAC blueprint
-    
-    This endpoint processes blueprint files (PDF, DWG, images) and performs:
-    - Document format detection and conversion
-    - Scale and dimension detection
-    - HVAC component recognition with AI
-    - Spatial relationship analysis
-    - Specification extraction
-    """
-    start_time = datetime.utcnow()
-    
+    """Segment an uploaded image using the SAMEngine."""
+    if SAM_ENGINE is None:
+        raise HTTPException(status_code=500, detail="SAMEngine not initialized")
+
     try:
-        # Validate file format
-        file_ext = file.filename.split('.')[-1].lower()
-        if file_ext not in [f.value for f in FileFormat]:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Unsupported file format: {file_ext}"
-            )
-        
-        # Create temporary file
-        with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file_ext}") as tmp_file:
-            content = await file.read()
-            tmp_file.write(content)
-            tmp_path = tmp_file.name
-        
-        # Generate analysis ID
-        analysis_id = f"analysis_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
-        
-        # Mock analysis (replace with actual implementation)
-        logger.info(f"Starting blueprint analysis: {analysis_id}")
-        
-        # Simulate processing
-        await asyncio.sleep(0.5)  # Remove in production
-        
-        # Mock detected components
-        mock_components = [
-            ComponentDetection(
-                component_id="comp_001",
-                component_type=ComponentType.HVAC_UNIT,
-                confidence=0.95,
-                bounding_box={"x": 100, "y": 200, "width": 150, "height": 200},
-                dimensions={"length": 48, "width": 36, "height": 60},
-                specifications={"capacity_tons": 5, "efficiency": "16 SEER"}
-            ),
-            ComponentDetection(
-                component_id="comp_002",
-                component_type=ComponentType.DUCT,
-                confidence=0.88,
-                bounding_box={"x": 300, "y": 150, "width": 400, "height": 50},
-                dimensions={"length": 240, "diameter": 12}
-            ),
-        ]
-        
-        processing_time = (datetime.utcnow() - start_time).total_seconds()
-        
-        response = BlueprintAnalysisResponse(
-            analysis_id=analysis_id,
-            status=AnalysisStatus.COMPLETED,
-            file_name=file.filename,
-            file_format=FileFormat(file_ext),
-            detected_components=mock_components,
-            scale_factor=0.25,  # 1/4" = 1'
-            total_components=len(mock_components),
-            processing_time_seconds=processing_time,
-            metadata={
-                "project_id": project_id,
-                "location": location,
-                "upload_timestamp": start_time.isoformat(),
-                "file_size_bytes": len(content)
-            }
-        )
-        
-        # Store results
-        analysis_results[analysis_id] = response
-        
-        # Cleanup
-        os.unlink(tmp_path)
-        
-        return response
-        
+        content = await file.read()
+        prompt_obj = json.loads(prompt) if prompt else {}
+        start = datetime.utcnow()
+        segments = SAM_ENGINE.segment(content, prompt_obj, return_top_k=return_top_k)
+        elapsed = int((datetime.utcnow() - start).total_seconds() * 1000)
+
+        seg_results = []
+        for seg in segments:
+            seg_results.append({
+                "label": seg.get("label", "object"),
+                "score": float(seg.get("score", 1.0)),
+                "mask": seg.get("mask"),
+                "bbox": seg.get("bbox", [])
+            })
+
+        return SegmentResponse(status="ok", segments=seg_results, processing_time_ms=elapsed)
     except Exception as e:
-        logger.error(f"Blueprint analysis failed: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+        logger.error(f"Segmentation error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/analyze/{analysis_id}", response_model=BlueprintAnalysisResponse)
 async def get_analysis_result(analysis_id: str):
@@ -328,76 +258,28 @@ async def get_analysis_result(analysis_id: str):
         raise HTTPException(status_code=404, detail="Analysis not found")
     return analysis_results[analysis_id]
 
-@app.post("/api/estimate", response_model=EstimationResponse)
-async def create_estimation(request: EstimationRequest):
-    """
-    Generate cost and labor estimation
-    
-    This endpoint provides:
-    - Material quantity calculations
-    - Labor hour estimations
-    - Location-adjusted costs
-    - Building code compliance checking
-    """
+@app.post("/api/v1/count", response_model=CountResponse)
+async def count_endpoint(file: UploadFile = File(...), prompt: str = Form(...)):
+    """Count objects in the provided image using the SAMEngine."""
+    if SAM_ENGINE is None:
+        raise HTTPException(status_code=500, detail="SAMEngine not initialized")
     try:
-        # Verify analysis exists
-        if request.analysis_id not in analysis_results:
-            raise HTTPException(status_code=404, detail="Analysis not found")
-        
-        analysis = analysis_results[request.analysis_id]
-        
-        # Generate estimation ID
-        estimation_id = f"est_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
-        
-        # Mock estimation (replace with actual implementation)
-        logger.info(f"Generating estimation: {estimation_id}")
-        
-        response = EstimationResponse(
-            estimation_id=estimation_id,
-            analysis_id=request.analysis_id,
-            material_costs={
-                "hvac_units": 8500.00,
-                "ductwork": 3200.00,
-                "vav_boxes": 4500.00,
-                "controls": 2100.00,
-                "miscellaneous": 1200.00
-            },
-            labor_hours={
-                "installation": 120.0,
-                "electrical": 40.0,
-                "testing": 16.0,
-                "commissioning": 8.0
-            },
-            total_cost=35720.00,
-            regional_adjustments={
-                "location": request.location,
-                "labor_multiplier": 1.15,
-                "material_multiplier": 1.08
-            },
-            compliance_notes=[
-                "System meets ASHRAE 90.1 requirements",
-                "Verify local permit requirements",
-                "Manual J calculation recommended"
-            ]
-        )
-        
-        # Store results
-        estimation_results[estimation_id] = response
-        
-        return response
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Estimation failed: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Estimation failed: {str(e)}")
+        content = await file.read()
+        prompt_obj = json.loads(prompt) if prompt else {}
+        start = datetime.utcnow()
+        counts = SAM_ENGINE.count(content, prompt_obj)
+        elapsed = int((datetime.utcnow() - start).total_seconds() * 1000)
 
-@app.get("/api/estimate/{estimation_id}", response_model=EstimationResponse)
-async def get_estimation(estimation_id: str):
-    """Retrieve estimation by ID"""
-    if estimation_id not in estimation_results:
-        raise HTTPException(status_code=404, detail="Estimation not found")
-    return estimation_results[estimation_id]
+        return CountResponse(
+            status="ok",
+            total_objects_found=int(counts.get("total_objects_found", 0)),
+            counts_by_category=counts.get("counts_by_category", {}),
+            processing_time_ms=elapsed,
+            confidence_stats=counts.get("confidence_stats", {})
+        )
+    except Exception as e:
+        logger.error(f"Counting error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/components/types")
 async def get_component_types():

@@ -1,4 +1,121 @@
 """
+SAMEngine - lightweight, self-contained SAM inference wrapper
+
+This module provides a SAMEngine class with simple `segment` and `count`
+methods and a factory `create_sam_engine` that validates model presence.
+
+The implementation intentionally avoids heavy, brittle imports at module
+import time; instead model loading is attempted during engine creation so
+failures surface clearly during application startup.
+"""
+from __future__ import annotations
+
+import os
+import json
+import logging
+from typing import Any, Dict, List, Tuple
+
+import numpy as np
+import cv2
+
+try:
+    from pycocotools import mask as maskUtils
+except Exception:  # pragma: no cover - optional dependency in some envs
+    maskUtils = None
+
+logger = logging.getLogger(__name__)
+
+
+class SAMEngine:
+    """Very small SAMEngine that exposes the same high-level API expected
+    by the service code. It is intentionally conservative: if the provided
+    model path does not exist the factory will raise an explicit error.
+
+    The real SAM integration can replace the internals of this class later.
+    """
+
+    def __init__(self, model_path: str):
+        self.model_path = model_path
+
+        if not model_path or not os.path.exists(model_path):
+            raise FileNotFoundError(f"SAMEngine: model file not found: {model_path}")
+
+        # Try to import torch (model loading) only when available so the
+        # error is explicit and helpful.
+        try:
+            import torch  # type: ignore
+
+            # Attempt a minimal load to validate the checkpoint shape/format.
+            # We don't require the full model class here — we simply try to
+            # read the file which surfaces corrupted/missing files.
+            _ = torch.load(model_path, map_location="cpu")
+            logger.info("SAMEngine: model checkpoint appears readable")
+        except Exception as e:
+            # Re-raise with a clear message so the FastAPI app will fail on startup
+            raise RuntimeError(f"Failed to validate SAM model at {model_path}: {e}")
+
+    def segment(self, image_bytes: bytes, prompt: Dict[str, Any], return_top_k: int = 1) -> List[Dict[str, Any]]:
+        """Run segmentation on the provided image bytes and prompt.
+
+        This lightweight implementation returns a single rectangular mask
+        (centered) encoded as COCO RLE. Replace with the real SAM call.
+        """
+        # Decode image
+        arr = np.frombuffer(image_bytes, dtype=np.uint8)
+        img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+        if img is None:
+            raise ValueError("Unable to decode image bytes")
+
+        h, w = img.shape[:2]
+
+        # Create a simple dummy mask: centered rectangle covering 30% area
+        mask = np.zeros((h, w), dtype=np.uint8)
+        pad_h = int(h * 0.15)
+        pad_w = int(w * 0.15)
+        y0, y1 = pad_h, h - pad_h
+        x0, x1 = pad_w, w - pad_w
+        mask[y0:y1, x0:x1] = 1
+
+        rle = None
+        if maskUtils is not None:
+            # pycocotools expects Fortran order
+            rle = maskUtils.encode(np.asfortranarray(mask.astype(np.uint8)))
+            # maskUtils.encode returns bytes for 'counts' in py3; convert to str
+            if isinstance(rle.get('counts'), bytes):
+                rle['counts'] = rle['counts'].decode('ascii')
+        else:
+            # Fallback: return a naive representation (may not be renderable)
+            rle = {"size": [h, w], "counts": ""}
+
+        # Return a single mock segment
+        segment = {
+            "label": prompt.get("label", "object"),
+            "score": 0.95,
+            "mask": rle,
+            "bbox": [int(x0), int(y0), int(x1 - x0), int(y1 - y0)],
+        }
+
+        return [segment]
+
+    def count(self, image_bytes: bytes, prompt: Dict[str, Any]) -> Dict[str, Any]:
+        """Return counts by category. This example counts the single mock
+        segment as 1 object of the requested label.
+        """
+        segments = self.segment(image_bytes, prompt, return_top_k=1)
+        label = segments[0].get('label', 'object')
+        return {
+            "total_objects_found": 1,
+            "counts_by_category": {label: 1},
+            "confidence_stats": {label: segments[0].get('score', 1.0)}
+        }
+
+
+def create_sam_engine(model_path: str) -> SAMEngine:
+    """Factory that creates and returns a SAMEngine instance or raises
+    a clear exception if the model cannot be validated/loaded.
+    """
+    return SAMEngine(model_path=model_path)
+"""
 SAM Model Inference Module
 Segment Anything Model for P&ID and HVAC diagram analysis
 

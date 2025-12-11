@@ -217,10 +217,6 @@ export default function SAMAnalysis() {
       setCountLoading(false);
     }
   };
-    } finally {
-      setCountLoading(false);
-    }
-  };
 
   const drawAllMasks = () => {
     const canvas = canvasRef.current;

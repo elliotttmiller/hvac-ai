@@ -57,21 +57,39 @@ class SAMInferenceEngine:
         self._warm_up_model()
 
     def _load_model(self):
-        """Load the fine-tuned SAM model state_dict."""
+        """Load the fine-tuned SAM model, intelligently handling both raw state_dict
+        and full training checkpoint files.
+        """
         try:
             logger.info(f"Attempting to load SAM model from {self.model_path}")
             if not os.path.exists(self.model_path):
                 raise FileNotFoundError(f"Model file not found at {self.model_path}")
+
+            # First, load the entire file into CPU memory to inspect it
+            checkpoint = torch.load(self.model_path, map_location="cpu")
             
-            # Our training saves a state_dict, so we load it this way
-            model_type = "vit_h" # Our model is a ViT-H
+            # Initialize the model architecture
+            model_type = "vit_h"  # Our model is always a ViT-H
             self.model = sam_model_registry[model_type]()
-            self.model.load_state_dict(torch.load(self.model_path, map_location=self.device))
+
+            # --- INTELLIGENT LOADING LOGIC ---
+            # Check if the loaded file is a full checkpoint (a dictionary with 'model_state_dict')
+            if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
+                logger.info("Detected a full training checkpoint. Extracting 'model_state_dict'...")
+                # If it's a full checkpoint, we extract just the model's weights
+                state_dict = checkpoint['model_state_dict']
+            else:
+                # Otherwise, it's a raw state_dict (like best_model.pth or the official sam_vit_h.pth)
+                logger.info("Detected a raw state_dict. Loading directly...")
+                state_dict = checkpoint
+
+            # Load and move to device
+            self.model.load_state_dict(state_dict)
             self.model.to(device=self.device)
             self.model.eval()
-            
+
             logger.info("✅ Fine-tuned SAM model loaded successfully")
-            
+
         except Exception as e:
             logger.error(f"❌ Failed to load SAM model: {e}")
             raise RuntimeError(f"Could not initialize SAM model from {self.model_path}") from e

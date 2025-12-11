@@ -4,35 +4,50 @@ const PYTHON_SERVICE_URL = process.env.NEXT_PUBLIC_AI_SERVICE_URL || 'http://loc
 
 export async function POST(request: NextRequest) {
   try {
-    const formData = await request.formData();
-    const file = formData.get('file') as File;
-    const projectId = formData.get('projectId') as string || 'default';
-    const location = formData.get('location') as string || '';
+    // Accept flexible form fields from the frontend and translate to the
+    // Python service's API. Frontend callers may POST to this Next.js route
+    // with either 'image' (used by the client) or 'file' (legacy). We map:
+    // - click/segment requests (contain 'coords' or 'coords') -> /api/v1/segment
+    // - full-image count requests -> /api/v1/count
 
-    if (!file) {
-      return NextResponse.json(
-        { error: 'No file provided' },
-        { status: 400 }
-      );
+    const formData = await request.formData();
+    const incomingFile = (formData.get('file') || formData.get('image')) as File | null;
+    const coords = formData.get('coords') as string | null;
+    const prompt = formData.get('prompt') as string | null;
+    const returnTopK = formData.get('return_top_k') as string | null;
+
+    if (!incomingFile) {
+      return NextResponse.json({ error: 'No file provided' }, { status: 400 });
     }
 
-    // Forward request to Python service
+    // Build python form data
     const pythonFormData = new FormData();
-    pythonFormData.append('file', file);
-    
-    const queryParams = new URLSearchParams({
-      project_id: projectId,
-      ...(location && { location })
-    });
+    // Python service expects 'file' as the upload field
+    pythonFormData.append('file', incomingFile);
 
-    const response = await fetch(
-      `${PYTHON_SERVICE_URL}/api/analyze/blueprint?${queryParams}`,
-      {
-        method: 'POST',
-        body: pythonFormData,
+    let targetUrl = '';
+
+    if (coords || prompt) {
+      // Segment request — build a prompt JSON containing coords if provided
+      const promptObj = prompt ? JSON.parse(prompt as string) : {}
+      if (coords && !promptObj['coords']) {
+        // coords expected as "x,y"
+        const [x, y] = (coords as string).split(',').map(s => parseInt(s, 10));
+        promptObj['coords'] = { x, y };
       }
-    );
+      pythonFormData.append('prompt', JSON.stringify(promptObj));
+      if (returnTopK) pythonFormData.append('return_top_k', returnTopK as string);
 
+      targetUrl = `${PYTHON_SERVICE_URL}/api/v1/segment`;
+    } else {
+      // Count request — send an empty prompt
+      pythonFormData.append('prompt', JSON.stringify({}));
+      targetUrl = `${PYTHON_SERVICE_URL}/api/v1/count`;
+    }
+
+    const response = await fetch(targetUrl, { method: 'POST', body: pythonFormData });
+
+    // Read response safely: some endpoints (or ngrok) may return HTML on error
     // Read response safely: some endpoints (or ngrok) may return HTML on error
     const contentType = response.headers.get('content-type') || '';
     const isJson = contentType.includes('application/json');
@@ -41,17 +56,11 @@ export async function POST(request: NextRequest) {
       const raw = isJson ? await response.json().catch(() => null) : await response.text().catch(() => null);
       const message = raw && typeof raw === 'object' ? (raw.detail || JSON.stringify(raw)) : String(raw || 'Analysis failed');
       console.error('Python service error', response.status, message);
-      return NextResponse.json(
-        { error: message },
-        { status: response.status }
-      );
+      return NextResponse.json({ error: message }, { status: response.status });
     }
 
     const data = isJson ? await response.json() : await response.text();
-    // If we got text back (HTML), include it under `raw` so frontend can show diagnostic info
-    return NextResponse.json(
-      isJson ? data : { raw: data }
-    );
+    return NextResponse.json(isJson ? data : { raw: data });
 
   } catch (error) {
     console.error('Blueprint analysis error:', error);

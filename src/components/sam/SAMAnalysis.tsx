@@ -49,6 +49,21 @@ export default function SAMAnalysis({
   // Initialize as null so this module does not access browser globals during SSR
   const imageRef = useRef<HTMLImageElement | null>(null);
 
+  // Ensure we have an Image object on the client (avoid using DOM APIs during SSR)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!imageRef.current) {
+      const img = new Image();
+      // allow cross-origin if images served remotely
+      try { img.crossOrigin = 'anonymous'; } catch (e) { /* ignore */ }
+      imageRef.current = img;
+    }
+    return () => {
+      // cleanup: dereference to help GC
+      imageRef.current = null;
+    };
+  }, []);
+
   // --- Core Drawing Logic ---
   const drawCanvasContent = useCallback(() => {
     const canvas = canvasRef.current;

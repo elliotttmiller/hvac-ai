@@ -240,10 +240,25 @@ class SAMInferenceEngine:
         processing_time = (time.perf_counter() - start_time) * 1000
         logger.info(f"Counting complete: {len(unique_detections)} objects found, time: {processing_time:.1f}ms")
 
+        # Convert detections into a frontend-friendly 'segments' list (RLE masks + bbox + score + label)
+        segments = []
+        for det in unique_detections:
+            rle = self._mask_to_rle(det['mask'])
+            bbox = self._mask_to_bbox(det['mask'])
+            label = self._classify_segment(det['mask'])
+            segments.append({
+                "label": label,
+                "score": float(det.get('score', 0.0)),
+                "mask": rle,
+                "bbox": bbox
+            })
+
         return {
             "total_objects_found": len(unique_detections),
             "counts_by_category": dict(counts),
-            "processing_time_ms": processing_time
+            "processing_time_ms": processing_time,
+            # include segments so the frontend can overlay masks/bboxes
+            "segments": segments
         }
 
     def _classify_segment(self, mask: np.ndarray) -> str:

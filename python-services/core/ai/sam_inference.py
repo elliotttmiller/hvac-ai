@@ -171,7 +171,7 @@ class SAMInferenceEngine:
                 image_embeddings=image_embedding,
                 image_pe=self.model.prompt_encoder.get_dense_pe(),
                 sparse_prompt_embeddings=sparse_embeddings,
-                dense_prompt_embeddings=None,
+                dense_prompt_embeddings=self.model.prompt_encoder.get_dense_pe(),
                 multimask_output=False
             )
 
@@ -200,9 +200,11 @@ class SAMInferenceEngine:
         h, w = original_size
 
         image_embedding = self._get_image_embedding(image)
-
         all_detections = []
         grid_points = [(x, y) for y in range(grid_size // 2, h, grid_size) for x in range(grid_size // 2, w, grid_size)]
+
+        # Precompute dense position encoding once for efficiency and to avoid None
+        dense_pe = self.model.prompt_encoder.get_dense_pe()
         
         for x, y in grid_points:
             with torch.no_grad():
@@ -215,8 +217,10 @@ class SAMInferenceEngine:
                 )
                 
                 low_res_masks, iou_predictions = self.model.mask_decoder(
-                    image_embeddings=image_embedding, image_pe=self.model.prompt_encoder.get_dense_pe(),
-                    sparse_prompt_embeddings=sparse_embeddings, dense_prompt_embeddings=None,
+                    image_embeddings=image_embedding,
+                    image_pe=dense_pe,
+                    sparse_prompt_embeddings=sparse_embeddings,
+                    dense_prompt_embeddings=dense_pe,
                     multimask_output=False
                 )
                 

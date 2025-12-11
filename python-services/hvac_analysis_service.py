@@ -11,6 +11,7 @@ from pathlib import Path
 import logging
 import traceback
 import io
+import time
 
 # --- 1. CONFIGURATION & LOGGING ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -79,13 +80,25 @@ async def segment_component(image: UploadFile = File(...), coords: str = Form(..
         contents = await image.read()
         pil_image = Image.open(io.BytesIO(contents)).convert("RGB")
         image_np = np.array(pil_image)
-        
+
         # Coords are sent as "x,y" string
         prompt = {"type": "point", "data": {"coords": [float(c) for c in coords.split(',')]}}
-        
+
+        # Time the segmentation so we can return processing_time in ms and seconds
+        start_time = time.perf_counter()
         results = sam_engine.segment(image_np, prompt)
-        
-        return {"status": "success", "segments": results}
+        processing_time_ms = (time.perf_counter() - start_time) * 1000
+
+        # Normalize response shape for frontend compatibility
+        total_components = len(results) if isinstance(results, list) else 0
+
+        return {
+            "status": "success",
+            "segments": results,
+            "total_components": total_components,
+            "processing_time_ms": processing_time_ms,
+            "processing_time_seconds": processing_time_ms / 1000.0,
+        }
 
     except Exception as e:
         logger.error(f"Segmentation failed: {e}", exc_info=True)
@@ -103,8 +116,22 @@ async def count_components(image: UploadFile = File(...), grid_size: int = Form(
         image_np = np.array(pil_image)
         
         result = sam_engine.count(image_np, grid_size=grid_size)
-        
-        return {"status": "success", **result}
+        # Ensure we return both ms and seconds and a frontend-friendly total_components
+        processing_time_ms = result.get("processing_time_ms") if isinstance(result, dict) else None
+        processing_time_seconds = (processing_time_ms / 1000.0) if processing_time_ms is not None else None
+
+        total_components = None
+        if isinstance(result, dict):
+            # preserve existing keys but add aliases for frontend
+            total_components = result.get("total_objects_found") or result.get("total_components")
+
+        response = {"status": "success", **(result if isinstance(result, dict) else {} )}
+        if processing_time_ms is not None:
+            response["processing_time_seconds"] = processing_time_seconds
+        if total_components is not None:
+            response["total_components"] = total_components
+
+        return response
 
     except Exception as e:
         logger.error(f"Counting failed: {e}", exc_info=True)

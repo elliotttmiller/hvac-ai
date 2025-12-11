@@ -29,9 +29,12 @@ interface AnalysisResult {
   analysis_id: string;
   status: string;
   file_name: string;
-  detected_components: any[];
+  detected_components: unknown[];
   total_components: number;
-  processing_time_seconds: number;
+  // The backend returns processing time in milliseconds as `processing_time_ms`.
+  // Keep processing_time_seconds for backward compatibility if present.
+  processing_time_ms?: number;
+  processing_time_seconds?: number;
 }
 
 interface HVACBlueprintUploaderProps {
@@ -97,8 +100,12 @@ export default function HVACBlueprintUploader({ onAnalysisComplete }: HVACBluepr
       if (onAnalysisComplete) {
         onAnalysisComplete(data);
       }
-    } catch (err: any) {
-      setError(err.message || 'Failed to analyze blueprint');
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        setError(err.message || 'Failed to analyze blueprint');
+      } else {
+        setError('Failed to analyze blueprint');
+      }
     } finally {
       setAnalyzing(false);
     }
@@ -109,6 +116,15 @@ export default function HVACBlueprintUploader({ onAnalysisComplete }: HVACBluepr
     setResult(null);
     setError(null);
     setProgress(0);
+  };
+
+  // Helper to normalize processing time to seconds and format safely
+  const formatProcessingTime = (r: AnalysisResult | null, decimals = 2) => {
+    if (!r) return (0).toFixed(decimals);
+    const secs = typeof r.processing_time_seconds === 'number'
+      ? r.processing_time_seconds
+      : (typeof r.processing_time_ms === 'number' ? r.processing_time_ms / 1000 : undefined);
+    return (typeof secs === 'number') ? secs.toFixed(decimals) : (0).toFixed(decimals);
   };
 
   return (
@@ -186,7 +202,7 @@ export default function HVACBlueprintUploader({ onAnalysisComplete }: HVACBluepr
             <Alert className="bg-green-50 border-green-200">
               <CheckCircle2 className="h-4 w-4 text-green-600" />
               <AlertDescription className="text-green-800">
-                <strong>Analysis Complete!</strong> Detected {result.total_components} HVAC components in {result.processing_time_seconds.toFixed(2)} seconds.
+                <strong>Analysis Complete!</strong> Detected {result.total_components || 0} HVAC components in {formatProcessingTime(result, 2)} seconds.
               </AlertDescription>
             </Alert>
           )}
@@ -211,7 +227,7 @@ export default function HVACBlueprintUploader({ onAnalysisComplete }: HVACBluepr
               </div>
               <div className="p-4 border rounded-lg">
                 <div className="flex items-center gap-2 mb-2"><FileText className="h-5 w-5 text-purple-500" /><span className="text-sm font-medium">Processing Time</span></div>
-                <p className="text-2xl font-bold">{result.processing_time_seconds.toFixed(1)}s</p>
+                <p className="text-2xl font-bold">{formatProcessingTime(result, 1)}s</p>
               </div>
             </div>
             <Button className="w-full" onClick={() => { window.location.href = `/analysis/${result.analysis_id}`; }}>

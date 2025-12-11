@@ -128,12 +128,13 @@ class SAMInferenceEngine:
             input_image = self.transform.apply_image(image)
             input_tensor = torch.as_tensor(input_image, device=self.device).permute(2, 0, 1).contiguous()
             
-            pixel_mean = torch.tensor([123.675, 116.28, 103.53], device=self.device).view(1, 3, 1, 1)
-            pixel_std = torch.tensor([58.395, 57.12, 57.375], device=self.device).view(1, 3, 1, 1)
+            # Use channel-first 3D tensor [C, H, W]; mean/std shaped [C,1,1]
+            pixel_mean = torch.tensor([123.675, 116.28, 103.53], device=self.device).view(-1, 1, 1)
+            pixel_std = torch.tensor([58.395, 57.12, 57.375], device=self.device).view(-1, 1, 1)
             input_tensor = (input_tensor - pixel_mean) / pixel_std
-            
-            # Add batch dimension and encode
-            embedding = self.model.image_encoder(input_tensor[None, :, :, :])
+
+            # Ensure input has shape [B, C, H, W] for the image encoder
+            embedding = self.model.image_encoder(input_tensor.unsqueeze(0))
 
         # 4) Store in cache with simple eviction policy
         if len(self.embedding_cache) >= self.MAX_CACHE_SIZE:

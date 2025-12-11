@@ -47,10 +47,12 @@ class SAMInferenceEngine:
         self.model_path = model_path
         self.device = device or ('cuda' if torch.cuda.is_available() else 'cpu')
         self.model = None
-        self.transform = ResizeLongestSide(1024) # Standard SAM transform
-        
-        # LRU Cache for image embeddings. Key = image hash, Value = embedding tensor
-        self.embedding_cache = lru_cache(maxsize=CACHE_DEFAULT_SIZE)(self._get_image_embedding)
+        self.transform = ResizeLongestSide(1024)  # Standard SAM transform
+
+        # Simple in-memory cache for image embeddings.
+        # Key = image hash (string), Value = embedding tensor
+        self.embedding_cache: Dict[str, torch.Tensor] = {}
+        self.MAX_CACHE_SIZE = CACHE_DEFAULT_SIZE
 
         logger.info(f"Initializing SAM Inference Engine on {self.device}")
         self._load_model()
@@ -108,7 +110,20 @@ class SAMInferenceEngine:
         return hashlib.sha256(image.tobytes()).hexdigest()
 
     def _get_image_embedding(self, image: np.ndarray) -> torch.Tensor:
-        """Encodes an image and returns its embedding. This function is cached."""
+        """Encodes an image and returns its embedding, using a hash-keyed cache.
+
+        The cache key is a SHA256 hash of the raw image bytes. This avoids using
+        unhashable numpy arrays as cache keys.
+        """
+        # 1) Build a hash key for the image
+        image_hash = self._compute_image_hash(image)
+
+        # 2) Return cached embedding if present
+        if image_hash in self.embedding_cache:
+            logger.info("Cache hit for image embedding")
+            return self.embedding_cache[image_hash]
+
+        # 3) Not cached -> compute embedding
         with torch.no_grad():
             input_image = self.transform.apply_image(image)
             input_tensor = torch.as_tensor(input_image, device=self.device).permute(2, 0, 1).contiguous()
@@ -119,25 +134,32 @@ class SAMInferenceEngine:
             
             # Add batch dimension and encode
             embedding = self.model.image_encoder(input_tensor[None, :, :, :])
-            return embedding
+
+        # 4) Store in cache with simple eviction policy
+        if len(self.embedding_cache) >= self.MAX_CACHE_SIZE:
+            # naive eviction: clear entire cache to free memory
+            logger.info("Embedding cache full; clearing cache")
+            self.embedding_cache.clear()
+
+        self.embedding_cache[image_hash] = embedding
+        return embedding
 
     def segment(self, image: np.ndarray, prompt: Dict[str, Any]) -> List[Dict]:
         """Perform interactive segmentation based on a user prompt."""
         start_time = time.perf_counter()
-        
         original_size = image.shape[:2]
-        image_embedding = self.embedding_cache(image)
+        image_embedding = self._get_image_embedding(image)
 
         with torch.no_grad():
             if prompt.get('type') == "point":
                 coords = np.array([prompt['data']['coords']])
                 labels = np.array([prompt['data'].get('label', 1)])
-                
+
                 coords = self.transform.apply_coords(coords, original_size)
-                
+
                 point_coords = torch.as_tensor(coords, dtype=torch.float, device=self.device)[None, :, :]
                 point_labels = torch.as_tensor(labels, dtype=torch.int, device=self.device)[None, :]
-                
+
                 sparse_embeddings, _ = self.model.prompt_encoder(
                     points=(point_coords, point_labels), boxes=None, masks=None
                 )
@@ -155,10 +177,10 @@ class SAMInferenceEngine:
         final_mask = self.model.postprocess_masks(
             low_res_masks, (self.model.image_encoder.img_size, self.model.image_encoder.img_size), original_size
         ).squeeze().cpu()
-        
+
         binary_mask = (final_mask > 0.0).numpy().astype(np.uint8)
         score = iou_predictions.squeeze().item()
-        
+
         label = self._classify_segment(binary_mask)
         rle_mask = self._mask_to_rle(binary_mask)
         bbox = self._mask_to_bbox(binary_mask)
@@ -175,9 +197,9 @@ class SAMInferenceEngine:
         start_time = time.perf_counter()
         original_size = image.shape[:2]
         h, w = original_size
-        
-        image_embedding = self.embedding_cache(image)
-        
+
+        image_embedding = self._get_image_embedding(image)
+
         all_detections = []
         grid_points = [(x, y) for y in range(grid_size // 2, h, grid_size) for x in range(grid_size // 2, w, grid_size)]
         

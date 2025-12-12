@@ -370,6 +370,7 @@ class EquipmentClearanceValidator:
             EquipmentType.HEAT_PUMP: 3000.0,
             EquipmentType.FAN: 2000.0,
             EquipmentType.PUMP: 1500.0,
+            EquipmentType.COMPRESSOR: 4000.0,
         }
         
         base_cost = relocation_costs.get(equipment_type, 3000.0)

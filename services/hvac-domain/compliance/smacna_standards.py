@@ -256,6 +256,12 @@ class SMACNAValidator:
                 duct.is_round
             )
             
+            # Build size recommendation string
+            if duct.is_round:
+                size_rec = f"{recommended.get('diameter_inches')} inches diameter"
+            else:
+                size_rec = f"{recommended.get('width_inches')}x{recommended.get('height_inches')} inches"
+            
             violations.append({
                 "severity": severity,
                 "code_reference": "SMACNA HVAC Systems Duct Design, 4th Edition",
@@ -265,8 +271,7 @@ class SMACNAValidator:
                     f"by {excess_pct:.1f}%"
                 ),
                 "remediation": (
-                    f"Increase duct size to {recommended.get('diameter_inches', recommended.get('width_inches'))} "
-                    f"inches {'diameter' if duct.is_round else 'width'} "
+                    f"Increase duct size to {size_rec} "
                     f"to reduce velocity to {recommended['actual_velocity_fpm']:.0f} FPM"
                 ),
                 "cost_impact": self._estimate_duct_sizing_cost(duct, recommended),

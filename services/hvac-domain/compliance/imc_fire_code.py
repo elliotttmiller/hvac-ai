@@ -25,8 +25,10 @@ class DamperType(Enum):
 
 class FireRating(Enum):
     """Fire resistance ratings (hours)"""
+    ONE_HALF_HOUR = 0.5
+    THREE_QUARTER_HOUR = 0.75
     ONE_HOUR = 1.0
-    ONE_HALF_HOUR = 1.5
+    ONE_AND_HALF_HOUR = 1.5
     TWO_HOUR = 2.0
     THREE_HOUR = 3.0
     FOUR_HOUR = 4.0
@@ -314,13 +316,15 @@ class IMCFireCodeValidator:
             DamperType.CEILING_RADIATION: 900.0
         }
         
-        # Fire rating multiplier
+        # Fire rating multiplier (higher ratings cost more due to complexity)
         rating_multiplier = {
-            FireRating.ONE_HOUR: 1.0,
-            FireRating.ONE_HALF_HOUR: 1.2,
-            FireRating.TWO_HOUR: 1.4,
-            FireRating.THREE_HOUR: 1.8,
-            FireRating.FOUR_HOUR: 2.2
+            FireRating.ONE_HALF_HOUR: 1.0,
+            FireRating.THREE_QUARTER_HOUR: 1.1,
+            FireRating.ONE_HOUR: 1.2,
+            FireRating.ONE_AND_HALF_HOUR: 1.4,
+            FireRating.TWO_HOUR: 1.6,
+            FireRating.THREE_HOUR: 2.0,
+            FireRating.FOUR_HOUR: 2.5
         }
         
         base_cost = base_costs.get(damper_type, 1000.0)

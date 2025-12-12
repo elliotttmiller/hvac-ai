@@ -250,7 +250,8 @@ class SystemGraphBuilder:
             "node_count": self.graph.number_of_nodes(),
             "edge_count": self.graph.number_of_edges(),
             "connected_components": len(list(nx.weakly_connected_components(self.graph))),
-            "average_degree": sum(dict(self.graph.degree()).values()) / max(self.graph.number_of_nodes(), 1),
+            # For directed graphs: average degree = (total in-degree + total out-degree) / nodes
+            "average_degree": (2 * self.graph.number_of_edges()) / max(self.graph.number_of_nodes(), 1),
         }
         
         # Calculate density (only for graphs with nodes)

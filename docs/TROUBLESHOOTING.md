@@ -142,7 +142,7 @@ The `NEXT_PUBLIC_API_BASE_URL` environment variable is not set.
 
 1. **Check Python version:**
    ```bash
-   python --version  # Should be 3.9 or higher
+   python3 --version  # Should be 3.9 or higher
    ```
 
 2. **Reinstall dependencies:**

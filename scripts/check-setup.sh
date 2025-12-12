@@ -44,7 +44,15 @@ echo ""
 echo "2. Checking Python..."
 if command -v python3 &> /dev/null; then
     PYTHON_VERSION=$(python3 --version)
-    print_status "OK" "Python installed: $PYTHON_VERSION"
+    # Extract version number (e.g., "Python 3.10.0" -> "3.10")
+    PY_MAJOR=$(python3 -c 'import sys; print(sys.version_info.major)')
+    PY_MINOR=$(python3 -c 'import sys; print(sys.version_info.minor)')
+    
+    if [ "$PY_MAJOR" -ge 3 ] && [ "$PY_MINOR" -ge 9 ]; then
+        print_status "OK" "Python installed: $PYTHON_VERSION"
+    else
+        print_status "WARN" "Python $PYTHON_VERSION found, but 3.9+ recommended"
+    fi
 else
     print_status "ERROR" "Python 3 not found. Please install Python 3.9+"
 fi
@@ -145,8 +153,9 @@ else
     API_URL="http://localhost:8000"
 fi
 
-if curl -s "${API_URL}/health" > /dev/null 2>&1; then
-    HEALTH=$(curl -s "${API_URL}/health")
+# Store health response to avoid multiple curl calls
+HEALTH=$(curl -s "${API_URL}/health" 2>/dev/null)
+if [ -n "$HEALTH" ]; then
     if echo "$HEALTH" | grep -q '"status":"healthy"'; then
         print_status "OK" "Backend is running and healthy at $API_URL"
     else

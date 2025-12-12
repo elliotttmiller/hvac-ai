@@ -1,0 +1,81 @@
+version: '3.8'
+
+services:
+  # HVAC Frontend Service
+  hvac-frontend:
+    container_name: hvac-frontend
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - NEXT_PUBLIC_API_BASE_URL=http://hvac-backend:8000
+    volumes:
+      - ./src:/app/src
+      - ./public:/app/public
+      - /app/node_modules
+    depends_on:
+      - hvac-backend
+    networks:
+      - hvac-network
+    restart: unless-stopped
+
+  # HVAC Backend Service
+  hvac-backend:
+    container_name: hvac-backend
+    build:
+      context: ./python-services
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=development
+      - MODEL_PATH=/models/sam_hvac_finetuned.pth
+      - ENABLE_SAHI=true
+      - GPU_ENABLED=true
+    volumes:
+      - ./python-services:/app
+      - ./models:/models
+      - ./hvac-datasets:/datasets
+      - hvac-cache:/cache
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    networks:
+      - hvac-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # HVAC Cache Service (Redis for model and result caching)
+  hvac-cache:
+    container_name: hvac-cache
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - hvac-cache-data:/data
+    networks:
+      - hvac-network
+    restart: unless-stopped
+    command: redis-server --maxmemory 2gb --maxmemory-policy allkeys-lru
+
+volumes:
+  hvac-cache:
+    driver: local
+  hvac-cache-data:
+    driver: local
+
+networks:
+  hvac-network:
+    driver: bridge

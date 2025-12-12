@@ -109,7 +109,7 @@ async def segment_component(image: UploadFile = File(...), coords: str = Form(..
         raise HTTPException(status_code=500, detail="An internal server error occurred during segmentation.")
 
 @app.post("/api/v1/count")
-async def count_components(request: Request, image: UploadFile = File(...), grid_size: int = Form(32), min_score: float = Form(0.2), debug: bool = Form(False), timeout: int = Form(120)):
+async def count_components(request: Request, image: UploadFile = File(...), grid_size: int = Form(32), min_score: float = Form(0.2), debug: bool = Form(False), timeout: int = Form(120), max_grid_points: int = Form(2000)):
     sam_engine = ml_models.get("sam_engine")
     if not sam_engine:
         raise HTTPException(status_code=503, detail="SAM engine is not available.")
@@ -122,8 +122,8 @@ async def count_components(request: Request, image: UploadFile = File(...), grid
         # FastAPI event loop is not blocked. Use a configurable timeout to
         # avoid UI-hangs and return a 504 if the work takes too long.
         loop = asyncio.get_running_loop()
-        func = functools.partial(sam_engine.count, image_np, grid_size, min_score, debug)
-        logger.info(f"Offloading count to executor (grid_size={grid_size}, min_score={min_score}, timeout={timeout}s)")
+        func = functools.partial(sam_engine.count, image_np, grid_size, min_score, debug, max_grid_points)
+        logger.info(f"Offloading count to executor (grid_size={grid_size}, min_score={min_score}, max_grid_points={max_grid_points}, timeout={timeout}s)")
         try:
             result = await asyncio.wait_for(loop.run_in_executor(None, func), timeout=float(timeout))
         except asyncio.TimeoutError:

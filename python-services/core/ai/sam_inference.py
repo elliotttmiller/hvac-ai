@@ -222,7 +222,17 @@ class SAMInferenceEngine:
                     # pad = (pad_left, pad_right, pad_top, pad_bottom)
                     input_tensor = F.pad(input_tensor, (0, pad_w, 0, pad_h), value=0.0)
 
+            # debug logging of tensor shapes to help diagnose recognition failures
+            try:
+                logger.debug(f"_get_image_embedding: input_tensor.shape={tuple(input_tensor.shape)} device={input_tensor.device}")
+            except Exception:
+                pass
+
             embedding = self.model.image_encoder(input_tensor.unsqueeze(0))
+            try:
+                logger.debug(f"_get_image_embedding: embedding.shape={tuple(embedding.shape)}")
+            except Exception:
+                pass
 
         # 4) Store in cache with simple eviction policy
         if len(self.embedding_cache) >= self.MAX_CACHE_SIZE:
@@ -291,7 +301,7 @@ class SAMInferenceEngine:
             "mask_png": mask_png_b64
         }]
 
-    def count(self, image: np.ndarray, grid_size: int, min_score: float = 0.2, debug: bool = False) -> Dict:
+    def count(self, image: np.ndarray, grid_size: int, min_score: float = 0.2, debug: bool = False, max_grid_points: int = 2000) -> Dict:
         """Perform automated component counting on the entire diagram."""
         start_time = time.perf_counter()
         original_size = image.shape[:2]
@@ -302,10 +312,23 @@ class SAMInferenceEngine:
         raw_grid_scores = []
         grid_points = [(x, y) for y in range(grid_size // 2, h, grid_size) for x in range(grid_size // 2, w, grid_size)]
 
+        # If the number of grid points is very large, deterministically
+        # subsample to a maximum to avoid pathological runtimes. We use
+        # evenly-spaced indices so the sampling is reproducible.
+        num_points = len(grid_points)
+        if num_points > int(max_grid_points):
+            logger.info(f"Grid has {num_points} points; subsampling to max_grid_points={max_grid_points}")
+            # compute evenly spaced indices across the range [0, num_points-1]
+            indices = np.linspace(0, num_points - 1, int(max_grid_points)).round().astype(int)
+            grid_points = [grid_points[i] for i in indices]
+            num_points = len(grid_points)
+
         # Precompute dense position encoding once for efficiency and to avoid None
         dense_pe = self.model.prompt_encoder.get_dense_pe()
-        
+
         for idx, (x, y) in enumerate(grid_points):
+            if idx % 200 == 0:
+                logger.info(f"Processing grid point {idx}/{len(grid_points)}")
             with torch.no_grad():
                 coords = self.transform.apply_coords(np.array([[x, y]]), original_size)
                 point_coords = torch.as_tensor(coords, dtype=torch.float, device=self.device)[None, :, :]
@@ -324,8 +347,6 @@ class SAMInferenceEngine:
                 )
                 
                 score = float(iou_predictions.squeeze().item())
-                # collect raw scores for diagnostics
-                raw_grid_scores.append({'idx': idx, 'x': int(x), 'y': int(y), 'score': score})
 
                 # Diagnostics: compute mask stats even if below threshold so we can inspect empties
                 try:
@@ -338,6 +359,9 @@ class SAMInferenceEngine:
                     mask_sum = 0
                     mask_shape = None
 
+                # collect raw scores for diagnostics (include mask_sum)
+                raw_grid_scores.append({'idx': idx, 'x': int(x), 'y': int(y), 'score': score, 'mask_sum': mask_sum})
+
                 # Log or debug-print depending on debug flag
                 if debug:
                     logger.info(f"Grid[{idx}] ({x},{y}) score={score:.3f} mask_sum={mask_sum} mask_shape={mask_shape}")
@@ -346,7 +370,7 @@ class SAMInferenceEngine:
                     all_detections.append({'mask': binary_mask, 'score': score})
 
         unique_detections = self._apply_nms(all_detections, NMS_IOU_THRESHOLD)
-        
+
         counts = Counter()
         for det in unique_detections:
             label = self._classify_segment(det['mask'])
@@ -380,13 +404,31 @@ class SAMInferenceEngine:
                 "mask_png": mask_png_b64
             })
 
+        # Compute compact score statistics for debugging
+        score_stats = None
+        try:
+            import numpy as _np
+            scores = _np.array([r['score'] for r in raw_grid_scores]) if raw_grid_scores else _np.array([])
+            if scores.size > 0:
+                score_stats = {
+                    'max': float(scores.max()),
+                    'mean': float(scores.mean()),
+                    'median': float(_np.median(scores)),
+                    'num_above_0_1': int((scores > 0.1).sum()),
+                    'num_above_0_2': int((scores > 0.2).sum()),
+                    'num_grid_points': int(scores.size)
+                }
+        except Exception:
+            score_stats = None
+
         return {
             "total_objects_found": len(unique_detections),
             "counts_by_category": dict(counts),
             "processing_time_ms": processing_time,
             # include segments so the frontend can overlay masks/bboxes
-            "segments": segments
-            , "raw_grid_scores": raw_grid_scores if debug else None
+            "segments": segments,
+            "raw_grid_scores": raw_grid_scores if debug else None,
+            "score_stats": score_stats
         }
 
     def _classify_segment(self, mask: np.ndarray) -> str:

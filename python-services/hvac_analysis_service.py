@@ -22,9 +22,28 @@ logger = logging.getLogger(__name__)
 
 # Find and load the .env file from the project root
 PROJECT_ROOT = Path(__file__).resolve().parents[1] # Go up one level from 'python-services'
-load_dotenv(dotenv_path=PROJECT_ROOT / ".env")
+env_file = PROJECT_ROOT / ".env"
+env_local_file = PROJECT_ROOT / ".env.local"
 
-MODEL_PATH = os.getenv("MODEL_PATH")
+# Try .env.local first, then fall back to .env
+if env_local_file.exists():
+    load_dotenv(dotenv_path=env_local_file)
+    logger.info(f"Loaded environment from {env_local_file}")
+elif env_file.exists():
+    load_dotenv(dotenv_path=env_file)
+    logger.info(f"Loaded environment from {env_file}")
+else:
+    logger.warning("No .env or .env.local file found. Using environment variables only.")
+
+MODEL_PATH = os.getenv("MODEL_PATH") or os.getenv("SAM_MODEL_PATH")
+
+# --- VALIDATION: Check if MODEL_PATH is configured ---
+if not MODEL_PATH:
+    logger.error("❌ CRITICAL: MODEL_PATH environment variable is not set!")
+    logger.error("Please configure MODEL_PATH in your .env file to point to the SAM model checkpoint.")
+    logger.error("Example: MODEL_PATH=./models/sam_hvac_finetuned.pth")
+    logger.error("See .env.example for configuration details.")
+    # Don't exit immediately - allow server to start in degraded mode
 
 # --- 2. CRITICAL: Import the REAL SAM Engine ---
 # Add the project root to the path so we can import from 'core'
@@ -34,12 +53,32 @@ from core.ai.sam_inference import create_sam_engine
 
 # --- 3. MODEL LOADING & LIFESPAN MANAGEMENT ---
 ml_models = {}
+model_load_error = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global model_load_error
     # Load the SAM engine on startup
     logger.info("Initializing SAM Engine...")
-    ml_models["sam_engine"] = create_sam_engine(model_path=MODEL_PATH)
+    
+    if not MODEL_PATH:
+        model_load_error = "MODEL_PATH environment variable is not configured"
+        logger.error(f"❌ Cannot load SAM engine: {model_load_error}")
+        logger.error("Server will run in degraded mode. API endpoints will return 503 errors.")
+    elif not Path(MODEL_PATH).exists():
+        model_load_error = f"Model file not found at: {MODEL_PATH}"
+        logger.error(f"❌ Cannot load SAM engine: {model_load_error}")
+        logger.error("Please ensure the model file exists at the configured path.")
+        logger.error("Server will run in degraded mode. API endpoints will return 503 errors.")
+    else:
+        try:
+            ml_models["sam_engine"] = create_sam_engine(model_path=MODEL_PATH)
+            logger.info(f"✅ SAM engine loaded successfully from {MODEL_PATH}")
+        except Exception as e:
+            model_load_error = f"Failed to load SAM engine: {str(e)}"
+            logger.error(f"❌ {model_load_error}", exc_info=True)
+            logger.error("Server will run in degraded mode. API endpoints will return 503 errors.")
+    
     yield
     # Clean up on shutdown
     ml_models.clear()
@@ -73,11 +112,58 @@ async def log_requests(request: Request, call_next):
         raise
 
 # --- 5. API ENDPOINTS ---
+
+@app.get("/")
+async def root():
+    """Root endpoint with basic service information."""
+    return {
+        "service": "HVAC AI Analysis Service",
+        "version": "1.0.0",
+        "status": "running",
+        "endpoints": {
+            "health": "/health",
+            "docs": "/docs",
+            "segment": "/api/v1/segment or /api/analyze",
+            "count": "/api/v1/count or /api/count"
+        }
+    }
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint that reports service and model status."""
+    sam_engine = ml_models.get("sam_engine")
+    
+    health_status = {
+        "status": "healthy" if sam_engine else "degraded",
+        "service": "running",
+        "model_loaded": sam_engine is not None,
+        "timestamp": time.time()
+    }
+    
+    if not sam_engine:
+        health_status["error"] = model_load_error or "SAM engine not loaded"
+        health_status["troubleshooting"] = {
+            "check_env": "Ensure MODEL_PATH is set in .env or .env.local",
+            "check_file": f"Ensure model file exists at: {MODEL_PATH}" if MODEL_PATH else "MODEL_PATH not configured",
+            "docs": "See .env.example and docs/GETTING_STARTED.md for setup instructions"
+        }
+    else:
+        health_status["model_path"] = MODEL_PATH
+        health_status["device"] = getattr(sam_engine, 'device', 'unknown')
+    
+    status_code = 200 if sam_engine else 503
+    return health_status
+
 @app.post("/api/v1/segment")
 async def segment_component(image: UploadFile = File(...), coords: str = Form(...)):
     sam_engine = ml_models.get("sam_engine")
     if not sam_engine:
-        raise HTTPException(status_code=503, detail="SAM engine is not available.")
+        error_detail = {
+            "error": "SAM engine is not available",
+            "reason": model_load_error or "Model not loaded",
+            "solution": "Check /health endpoint for troubleshooting information"
+        }
+        raise HTTPException(status_code=503, detail=error_detail)
     
     try:
         contents = await image.read()
@@ -112,7 +198,12 @@ async def segment_component(image: UploadFile = File(...), coords: str = Form(..
 async def count_components(request: Request, image: UploadFile = File(...), grid_size: int = Form(32), min_score: float = Form(0.2), debug: bool = Form(False), timeout: int = Form(120), max_grid_points: int = Form(2000)):
     sam_engine = ml_models.get("sam_engine")
     if not sam_engine:
-        raise HTTPException(status_code=503, detail="SAM engine is not available.")
+        error_detail = {
+            "error": "SAM engine is not available",
+            "reason": model_load_error or "Model not loaded",
+            "solution": "Check /health endpoint for troubleshooting information"
+        }
+        raise HTTPException(status_code=503, detail=error_detail)
         
     try:
         contents = await image.read()

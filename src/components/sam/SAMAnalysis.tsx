@@ -44,6 +44,8 @@ export default function SAMAnalysis({
   const [segments, setSegments] = useState<Segment[]>([]);
   const [countResult, setCountResult] = useState<CountResult | null>(null);
   const [clickMode, setClickMode] = useState(false);
+  const [apiHealthy, setApiHealthy] = useState<boolean | null>(null);
+  const [apiError, setApiError] = useState<string | null>(null);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   // Initialize as null so this module does not access browser globals during SSR
@@ -238,6 +240,60 @@ export default function SAMAnalysis({
     }
   }, [uploadedImage, drawCanvasContent]);
 
+  // Check API health on mount
+  useEffect(() => {
+    const checkApiHealth = async () => {
+      if (!API_BASE_URL) {
+        setApiHealthy(false);
+        setApiError('API URL not configured. Please set NEXT_PUBLIC_API_BASE_URL in your environment variables.');
+        toast.error('API URL not configured', {
+          description: 'Please configure NEXT_PUBLIC_API_BASE_URL in .env.local',
+          duration: 10000,
+        });
+        return;
+      }
+
+      try {
+        const response = await fetch(`${API_BASE_URL}/health`, {
+          method: 'GET',
+          signal: AbortSignal.timeout(5000), // 5 second timeout
+        });
+
+        if (response.ok) {
+          const health = await response.json();
+          if (health.model_loaded) {
+            setApiHealthy(true);
+            setApiError(null);
+          } else {
+            setApiHealthy(false);
+            setApiError(health.error || 'SAM model not loaded on backend');
+            toast.warning('Backend service is running but model not loaded', {
+              description: health.error || 'Check backend logs for details',
+              duration: 10000,
+            });
+          }
+        } else {
+          setApiHealthy(false);
+          setApiError(`Backend returned status ${response.status}`);
+          toast.error('Backend health check failed', {
+            description: `Status: ${response.status}`,
+            duration: 10000,
+          });
+        }
+      } catch (err: unknown) {
+        setApiHealthy(false);
+        const message = err instanceof Error ? err.message : 'Failed to connect';
+        setApiError(`Cannot connect to backend: ${message}`);
+        toast.error('Cannot connect to backend', {
+          description: `Make sure the backend is running at ${API_BASE_URL}`,
+          duration: 10000,
+        });
+      }
+    };
+
+    checkApiHealth();
+  }, []);
+
   // If parent provided initial props, initialize internal state on mount
   useEffect(() => {
     if (initialImage) {
@@ -278,6 +334,14 @@ export default function SAMAnalysis({
   const handleCanvasClick = useCallback(async (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!clickMode || !uploadedImage || !canvasRef.current || analysisState !== 'idle') return;
 
+    // Check API health before attempting request
+    if (apiHealthy === false) {
+      toast.error('Backend service unavailable', {
+        description: apiError || 'Please check that the backend is running and configured correctly',
+      });
+      return;
+    }
+
     const canvas = canvasRef.current;
     const rect = canvas.getBoundingClientRect();
     const scaleX = canvas.width / rect.width;
@@ -291,7 +355,7 @@ export default function SAMAnalysis({
     setError(null);
 
     try {
-      if (!API_BASE_URL) throw new Error('API URL not configured.');
+      if (!API_BASE_URL) throw new Error('API URL not configured. Please set NEXT_PUBLIC_API_BASE_URL.');
 
       const formData = new FormData();
       formData.append('image', uploadedImage);
@@ -301,7 +365,10 @@ export default function SAMAnalysis({
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || 'Segmentation request failed');
+        const errorMessage = typeof errorData.detail === 'object' 
+          ? errorData.detail.error || JSON.stringify(errorData.detail)
+          : errorData.detail || errorData.error || 'Segmentation request failed';
+        throw new Error(errorMessage);
       }
 
       const data = await response.json();
@@ -315,14 +382,22 @@ export default function SAMAnalysis({
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       setError(message);
-      toast.error(message);
+      toast.error('Segmentation failed', { description: message });
     } finally {
       setAnalysisState('idle');
     }
-  }, [clickMode, uploadedImage, analysisState]);
+  }, [clickMode, uploadedImage, analysisState, apiHealthy, apiError]);
 
   const handleCountAll = useCallback(async () => {
     if (!uploadedImage || analysisState !== 'idle') return;
+
+    // Check API health before attempting request
+    if (apiHealthy === false) {
+      toast.error('Backend service unavailable', {
+        description: apiError || 'Please check that the backend is running and configured correctly',
+      });
+      return;
+    }
 
     setAnalysisState('counting');
     setError(null);
@@ -331,7 +406,7 @@ export default function SAMAnalysis({
     let toastId: string | number | undefined;
 
     try {
-      if (!API_BASE_URL) throw new Error('API URL not configured.');
+      if (!API_BASE_URL) throw new Error('API URL not configured. Please set NEXT_PUBLIC_API_BASE_URL.');
       
       const formData = new FormData();
       formData.append('image', uploadedImage);
@@ -342,20 +417,23 @@ export default function SAMAnalysis({
       
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || 'Counting request failed');
+        const errorMessage = typeof errorData.detail === 'object' 
+          ? errorData.detail.error || JSON.stringify(errorData.detail)
+          : errorData.detail || errorData.error || 'Counting request failed';
+        throw new Error(errorMessage);
       }
 
       const data = await response.json();
-  setCountResult(data as CountResult);
-  toast.success(`Analysis complete. Found ${data.total_objects_found} objects.`, { id: toastId });
+      setCountResult(data as CountResult);
+      toast.success(`Analysis complete. Found ${data.total_objects_found} objects.`, { id: toastId });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       setError(message);
-      toast.error(message, { id: toastId, duration: 5000 });
+      toast.error('Analysis failed', { description: message, id: toastId, duration: 5000 });
     } finally {
       setAnalysisState('idle');
     }
-  }, [uploadedImage, analysisState]);
+  }, [uploadedImage, analysisState, apiHealthy, apiError]);
 
   const handleClear = () => {
     setSegments([]);
@@ -384,7 +462,24 @@ export default function SAMAnalysis({
 
   return (
     <div className="container mx-auto py-8 space-y-6">
-      {/* ... Header remains the same ... */}
+      {/* API Configuration Warning */}
+      {apiHealthy === false && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            <strong>Backend Service Issue:</strong> {apiError || 'Cannot connect to backend'}
+            <div className="mt-2 text-sm">
+              <strong>Quick troubleshooting:</strong>
+              <ul className="list-disc list-inside mt-1">
+                <li>Ensure the backend server is running at {API_BASE_URL || '(not configured)'}</li>
+                <li>Check that NEXT_PUBLIC_API_BASE_URL is set in .env.local</li>
+                <li>Verify the SAM model is loaded (check backend logs)</li>
+                <li>Visit {API_BASE_URL}/health for detailed status</li>
+              </ul>
+            </div>
+          </AlertDescription>
+        </Alert>
+      )}
 
       <Card>
         <CardHeader>

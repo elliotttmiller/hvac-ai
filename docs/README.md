@@ -5,6 +5,7 @@ This directory contains comprehensive documentation for the HVAC AI Platform.
 ## Quick Start
 
 - **[Getting Started Guide](GETTING_STARTED.md)** - Installation and setup instructions
+- **[Troubleshooting Guide](TROUBLESHOOTING.md)** - Fix common issues with uploads and SAM analysis
 - **[Platform Summary](PLATFORM_SUMMARY.md)** - High-level platform overview
 - **[Architecture](ARCHITECTURE.md)** - System architecture and design
 
@@ -26,14 +27,17 @@ This directory contains comprehensive documentation for the HVAC AI Platform.
 ## Validation & Testing
 
 - **[Validation Report](VALIDATION_REPORT.md)** - System validation and testing results
+- **[Audit Summary](AUDIT_SUMMARY.md)** - Comprehensive audit of upload and analysis issues
 
 ## Documentation Organization
 
 ### For New Users
 1. Start with [Getting Started Guide](GETTING_STARTED.md)
-2. Review [Platform Summary](PLATFORM_SUMMARY.md)
-3. Understand the [Architecture](ARCHITECTURE.md)
-4. Follow [SAM Deployment Guide](SAM_DEPLOYMENT.md) to set up SAM features
+2. Run `npm run check` to validate your setup
+3. If issues occur, see [Troubleshooting Guide](TROUBLESHOOTING.md)
+4. Review [Platform Summary](PLATFORM_SUMMARY.md)
+5. Understand the [Architecture](ARCHITECTURE.md)
+6. Follow [SAM Deployment Guide](SAM_DEPLOYMENT.md) to set up SAM features
 
 ### For Developers
 1. Understand the [Architecture](ARCHITECTURE.md)

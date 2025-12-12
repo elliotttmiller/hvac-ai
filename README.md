@@ -34,8 +34,16 @@ cd python-services && python hvac_analysis_service.py  # Backend (port 8000)
 
 ### Quick Links
 - [Getting Started](docs/GETTING_STARTED.md) - Setup and installation
+- [Troubleshooting](docs/TROUBLESHOOTING.md) - Fix common issues with uploads and analysis
 - [SAM Deployment](docs/SAM_DEPLOYMENT.md) - Deploy SAM model features
 - [API Documentation](http://localhost:8000/docs) - Interactive API docs (when backend is running)
+
+### Setup Validation
+
+Run this command to check your setup:
+```bash
+./scripts/check-setup.sh
+```
 
 ## Project Structure
 

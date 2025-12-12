@@ -107,7 +107,7 @@ async def segment_component(image: UploadFile = File(...), coords: str = Form(..
         raise HTTPException(status_code=500, detail="An internal server error occurred during segmentation.")
 
 @app.post("/api/v1/count")
-async def count_components(image: UploadFile = File(...), grid_size: int = Form(32)):
+async def count_components(image: UploadFile = File(...), grid_size: int = Form(32), min_score: float = Form(0.2), debug: bool = Form(False)):
     sam_engine = ml_models.get("sam_engine")
     if not sam_engine:
         raise HTTPException(status_code=503, detail="SAM engine is not available.")
@@ -116,8 +116,7 @@ async def count_components(image: UploadFile = File(...), grid_size: int = Form(
         contents = await image.read()
         pil_image = Image.open(io.BytesIO(contents)).convert("RGB")
         image_np = np.array(pil_image)
-        
-        result = sam_engine.count(image_np, grid_size=grid_size)
+        result = sam_engine.count(image_np, grid_size=grid_size, min_score=min_score, debug=debug)
         # Ensure we return both ms and seconds and a frontend-friendly total_components
         processing_time_ms = result.get("processing_time_ms") if isinstance(result, dict) else None
         processing_time_seconds = (processing_time_ms / 1000.0) if processing_time_ms is not None else None
@@ -133,6 +132,9 @@ async def count_components(image: UploadFile = File(...), grid_size: int = Form(
             response["processing_time_seconds"] = processing_time_seconds
         if total_components is not None:
             response["total_components"] = total_components
+        # forward raw grid scores for debugging if present
+        if isinstance(result, dict) and result.get("raw_grid_scores") is not None:
+            response["raw_grid_scores"] = result.get("raw_grid_scores")
 
         return response
 

@@ -17,6 +17,12 @@ This directory contains comprehensive documentation for the HVAC AI Platform.
 - **[SAM Integration Guide](SAM_INTEGRATION_GUIDE.md)** - Complete API reference and integration
 - **[SAM Implementation Summary](SAM_IMPLEMENTATION_SUMMARY.md)** - Technical implementation details
 - **[SAM Pipeline Summary](SAM_PIPELINE_SUMMARY.md)** - Training pipeline and dataset info
+- **[SAM Upgrade Implementation](SAM_UPGRADE_IMPLEMENTATION.md)** - Advanced implementation specification
+
+#### SAM Compliance Audit (December 2025)
+- **[SAM Compliance Audit Summary](SAM_COMPLIANCE_AUDIT_SUMMARY.md)** - ⭐ Start here: Executive summary
+- **[SAM Implementation Audit](SAM_IMPLEMENTATION_AUDIT.md)** - Full technical compliance analysis (84.5%)
+- **[SAM Implementation Recommendations](SAM_IMPLEMENTATION_RECOMMENDATIONS.md)** - Actionable fixes with code examples
 
 ### AI Inference Engine
 
@@ -27,7 +33,8 @@ This directory contains comprehensive documentation for the HVAC AI Platform.
 ## Validation & Testing
 
 - **[Validation Report](VALIDATION_REPORT.md)** - System validation and testing results
-- **[Audit Summary](AUDIT_SUMMARY.md)** - Comprehensive audit of upload and analysis issues
+- **[Audit Summary](AUDIT_SUMMARY.md)** - Comprehensive audit of upload and analysis issues (Previous audit)
+- **[SAM Compliance Tests](../python-services/tests/test_sam_compliance.py)** - SAM specification compliance test suite
 
 ## Documentation Organization
 

@@ -122,33 +122,79 @@ class HVACDocumentProcessor:
             return BlueprintFormat.PNG
     
     def _process_pdf(self, file_path: str) -> Dict[str, Any]:
-        """Process PDF blueprint with HVAC-specific optimization"""
+        """Process PDF blueprint with HVAC-specific optimization and multi-page support"""
         pages = []
         metadata = {"format": "pdf", "page_count": 0}
         
         try:
-            # In production, would use PyMuPDF or pdf2image
-            self.logger.info("PDF processing - extracting pages with layer preservation")
-            
-            # Placeholder for actual PDF processing
-            # Would extract pages at high DPI, preserve vector data
-            pages.append({
-                "image": np.zeros((3000, 4000, 3), dtype=np.uint8),
-                "page_number": 1,
-                "page_type": PageType.PLAN_VIEW
-            })
-            
-            metadata["page_count"] = len(pages)
+            # Try to use PyMuPDF for PDF processing
+            try:
+                import fitz  # PyMuPDF
+                
+                self.logger.info("PDF processing with PyMuPDF - extracting all pages")
+                
+                pdf_document = fitz.open(file_path)
+                metadata["page_count"] = pdf_document.page_count
+                
+                for page_num in range(pdf_document.page_count):
+                    page = pdf_document[page_num]
+                    
+                    # Render at high DPI for quality
+                    mat = fitz.Matrix(self.config["target_dpi"] / 72, 
+                                     self.config["target_dpi"] / 72)
+                    pix = page.get_pixmap(matrix=mat)
+                    
+                    # Convert to numpy array
+                    img_data = np.frombuffer(pix.samples, dtype=np.uint8)
+                    img_data = img_data.reshape(pix.height, pix.width, pix.n)
+                    
+                    # Convert RGBA to RGB if needed
+                    if pix.n == 4:
+                        img_data = img_data[:, :, :3]
+                    
+                    # Classify page type
+                    page_type = self._classify_page_type(img_data)
+                    
+                    pages.append({
+                        "image": img_data,
+                        "page_number": page_num + 1,
+                        "page_type": page_type,
+                        "dimensions": (pix.width, pix.height)
+                    })
+                    
+                    self.logger.info(
+                        f"Extracted page {page_num + 1}/{pdf_document.page_count}: "
+                        f"{page_type.value}"
+                    )
+                
+                pdf_document.close()
+                
+            except ImportError:
+                self.logger.warning("PyMuPDF not available, using fallback")
+                # Fallback to placeholder
+                pages.append({
+                    "image": np.zeros((3000, 4000, 3), dtype=np.uint8),
+                    "page_number": 1,
+                    "page_type": PageType.PLAN_VIEW,
+                    "dimensions": (4000, 3000)
+                })
+                metadata["page_count"] = 1
             
         except Exception as e:
             self.logger.error(f"PDF processing failed: {e}")
             raise
         
-        # Assess quality and enhance
+        # Assess quality and enhance each page
         for page in pages:
             page["quality_metrics"] = self.assess_quality(page["image"])
             if page["quality_metrics"].overall_quality < self.config["quality_threshold"]:
                 page["image"] = self.enhance_blueprint(page["image"])
+        
+        # Add cross-page analysis metadata
+        metadata["page_types"] = [p["page_type"].value for p in pages]
+        metadata["plan_views"] = sum(1 for p in pages if p["page_type"] == PageType.PLAN_VIEW)
+        metadata["sections"] = sum(1 for p in pages if p["page_type"] == PageType.SECTION_VIEW)
+        metadata["details"] = sum(1 for p in pages if p["page_type"] == PageType.DETAIL_VIEW)
         
         return {
             "pages": pages,
@@ -332,7 +378,7 @@ class HVACDocumentProcessor:
     
     def _classify_page_type(self, image: np.ndarray) -> PageType:
         """
-        Classify HVAC blueprint page type
+        Classify HVAC blueprint page type using text and content analysis
         
         Args:
             image: Blueprint image
@@ -340,17 +386,77 @@ class HVACDocumentProcessor:
         Returns:
             PageType classification
         """
-        # Simplified classification - in production would use ML or text analysis
-        # Would look for keywords like "PLAN", "SECTION", "DETAIL", "SCHEDULE"
+        try:
+            import pytesseract
+            
+            # Extract text from image (just from title block area typically top/bottom)
+            height, width = image.shape[:2]
+            
+            # Sample top 10% and bottom 10% for title block text
+            top_region = image[:int(height * 0.1), :]
+            bottom_region = image[int(height * 0.9):, :]
+            
+            # Extract text from both regions
+            try:
+                top_text = pytesseract.image_to_string(top_region).upper()
+                bottom_text = pytesseract.image_to_string(bottom_region).upper()
+                combined_text = top_text + " " + bottom_text
+                
+                # Classify based on keywords
+                if any(keyword in combined_text for keyword in ["PLAN", "FLOOR", "LAYOUT"]):
+                    return PageType.PLAN_VIEW
+                elif any(keyword in combined_text for keyword in ["SECTION", "ELEVATION", "CUT"]):
+                    return PageType.SECTION_VIEW
+                elif any(keyword in combined_text for keyword in ["DETAIL", "ENLARGED", "CALLOUT"]):
+                    return PageType.DETAIL_VIEW
+                elif any(keyword in combined_text for keyword in ["SCHEDULE", "LIST", "TABLE", "SPEC"]):
+                    return PageType.EQUIPMENT_SCHEDULE
+                elif any(keyword in combined_text for keyword in ["LEGEND", "SYMBOL", "KEY", "NOTE"]):
+                    return PageType.LEGEND
+                
+            except Exception as e:
+                self.logger.debug(f"OCR classification failed: {e}")
+            
+        except ImportError:
+            self.logger.debug("pytesseract not available for page classification")
         
-        # Placeholder logic
+        # Fallback to content-based classification
         height, width = image.shape[:2]
         aspect_ratio = width / height
         
-        if aspect_ratio > 1.3:
+        # Analyze content density
+        gray = image if len(image.shape) == 2 else image[:, :, 0]
+        edge_density = self._calculate_edge_density(gray)
+        
+        # Plan views typically have:
+        # - Wider aspect ratio
+        # - Lower edge density (more white space)
+        if aspect_ratio > 1.4 and edge_density < 0.15:
             return PageType.PLAN_VIEW
-        else:
+        
+        # Sections typically have:
+        # - Taller aspect ratio
+        # - Higher edge density (more detail)
+        elif aspect_ratio < 0.8 and edge_density > 0.15:
             return PageType.SECTION_VIEW
+        
+        # Details typically have:
+        # - Moderate aspect ratio
+        # - Very high edge density
+        elif edge_density > 0.20:
+            return PageType.DETAIL_VIEW
+        
+        # Default to plan view
+        return PageType.PLAN_VIEW
+    
+    def _calculate_edge_density(self, image: np.ndarray) -> float:
+        """Calculate edge density for content analysis"""
+        try:
+            import cv2
+            edges = cv2.Canny(image, 50, 150)
+            return np.sum(edges > 0) / edges.size
+        except:
+            return 0.1  # Default value
     
     def extract_hvac_symbols(self, image: np.ndarray) -> List[Dict[str, Any]]:
         """

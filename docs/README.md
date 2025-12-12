@@ -27,6 +27,7 @@ This directory contains comprehensive documentation for the HVAC AI Platform.
 ## Validation & Testing
 
 - **[Validation Report](VALIDATION_REPORT.md)** - System validation and testing results
+- **[Audit Summary](AUDIT_SUMMARY.md)** - Comprehensive audit of upload and analysis issues
 
 ## Documentation Organization
 

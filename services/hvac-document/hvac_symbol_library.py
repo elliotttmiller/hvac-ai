@@ -223,7 +223,7 @@ class HVACSymbolLibrary:
     def _initialize_standard_templates(self):
         """
         Initialize comprehensive ASHRAE/SMACNA/ISO symbol templates
-        Covers all 65+ categories from HVAC_TAXONOMY
+        Covers 95+ categories with full HVAC_TAXONOMY alignment (65+ base categories)
         """
         # === ACTUATORS (7 types) ===
         self._add_actuator_templates()

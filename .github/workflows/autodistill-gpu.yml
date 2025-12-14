@@ -1,14 +1,14 @@
-# .github/workflows/autodistill-gpu.yml
-name: AutoDistill GPU Pipeline Execution
+# .github/workflows/gpu-autodistill-pipeline.yml
+name: HVAC-AI GPU AutoDistill Pipeline
 
 on:
-  workflow_dispatch:  # Allow manual triggering
+  workflow_dispatch:  # Allows manual triggering
   push:
     branches: [main, dev]
     paths:
       - 'notebooks/**'
       - 'python-services/**'
-      - '.github/workflows/autodistill-gpu.yml'
+      - '.github/workflows/gpu-autodistill-pipeline.yml'
   pull_request:
     branches: [main]
     paths:
@@ -16,11 +16,10 @@ on:
       - 'python-services/**'
 
 jobs:
-  run-autodistill-pipeline:
+  run-gpu-pipeline:
     runs-on: ubuntu-latest
     hardware:
       gpu: T4  # NVIDIA Tesla T4 GPU - good balance of cost/performance
-      # Alternative options: A10G, L4, V100, A100 (more expensive but faster)
     permissions:
       contents: read
       actions: read
@@ -28,8 +27,8 @@ jobs:
       PYTHON_VERSION: "3.10"
       CUDA_VERSION: "12.1"
       NVIDIA_DRIVER_VERSION: "535"
-      NOTEBOOK_NAME: "autodistill_pipeline.ipynb"  # Update this to your actual notebook name
-      
+      NOTEBOOK_NAME: "autodistill_pipeline.ipynb"  # Update if your notebook has a different name
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -55,39 +54,60 @@ jobs:
             libgl1-mesa-glx \
             libglib2.0-0 \
             ffmpeg \
-            libgl1-mesa-glx \
             libgomp1 \
             git \
             wget \
-            unzip
+            unzip \
+            software-properties-common
             
+          # Add NVIDIA repository and install drivers
+          sudo apt-get install -y ubuntu-drivers-common
+          sudo ubuntu-drivers autoinstall
+          
           # Install NVIDIA driver dependencies
           sudo apt-get install -y --no-install-recommends \
             nvidia-driver-${{ env.NVIDIA_DRIVER_VERSION }} \
-            nvidia-cuda-toolkit
+            nvidia-cuda-toolkit \
+            nvidia-utils-${{ env.NVIDIA_DRIVER_VERSION }}
 
       - name: Verify GPU availability
         run: |
-          echo "=== GPU INFORMATION ==="
-          nvidia-smi
+          echo "=== 🚀 GPU ENVIRONMENT VALIDATION ==="
           echo ""
+          
+          # Check if NVIDIA GPU is detected
+          echo "=== NVIDIA GPU DETECTION ==="
+          lspci | grep -i nvidia || echo "No NVIDIA GPU detected in PCI devices"
+          echo ""
+          
+          # Check NVIDIA driver installation
+          echo "=== NVIDIA DRIVER INFORMATION ==="
+          nvidia-smi || echo "nvidia-smi command failed - driver may not be installed correctly"
+          echo ""
+          
+          # Check CUDA installation
           echo "=== CUDA VERSION ==="
-          nvcc --version || echo "nvcc not found in PATH"
+          nvcc --version || echo "nvcc not found - CUDA toolkit may not be installed"
           echo ""
-          echo "=== DRIVER VERSION ==="
-          cat /proc/driver/nvidia/version || echo "NVIDIA driver version not available"
+          
+          # Check GPU memory
+          echo "=== GPU MEMORY STATUS ==="
+          nvidia-smi --query-gpu=memory.total,memory.used,memory.free --format=csv || echo "Could not query GPU memory"
           echo ""
-          echo "=== GPU MEMORY ==="
-          nvidia-smi --query-gpu=memory.total --format=csv
-          echo ""
+          
+          # Check GPU compute capability
           echo "=== GPU COMPUTE CAPABILITY ==="
-          nvidia-smi --query-gpu=compute_cap --format=csv
+          if command -v nvidia-smi &> /dev/null; then
+            nvidia-smi --query-gpu=compute_cap --format=csv
+          else
+            echo "nvidia-smi not available - cannot check compute capability"
+          fi
 
-      - name: Install Python dependencies
+      - name: Install Python dependencies with GPU support
         run: |
           cd python-services
           
-          # Create virtual environment
+          # Create and activate virtual environment
           python -m venv .venv
           source .venv/bin/activate
           
@@ -109,12 +129,14 @@ jobs:
           # Install supporting GPU-accelerated libraries
           pip install opencv-python-headless transformers sentence-transformers ultralytics numpy pandas matplotlib jupyter nbconvert jupyter-client jupyter-core
           
-          # Install project-specific requirements if they exist
+          # Install HVAC-AI specific requirements
           if [ -f requirements.txt ]; then
             pip install -r requirements.txt
           fi
+          
+          echo "✅ All Python dependencies installed with GPU support"
 
-      - name: Download model weights
+      - name: Download required model weights
         run: |
           cd python-services
           source .venv/bin/activate
@@ -122,30 +144,30 @@ jobs:
           # Create weights directory
           mkdir -p weights
           
-          echo "=== DOWNLOADING MODEL WEIGHTS ==="
+          echo "=== 📥 DOWNLOADING MODEL WEIGHTS ==="
           
-          # Download SAM weights
+          # Download SAM weights (Segment Anything Model)
           if [ ! -f weights/sam_vit_h_4b8939.pth ]; then
-            echo "Downloading SAM weights (large model)..."
+            echo "📥 Downloading SAM weights (large model)..."
             wget -O weights/sam_vit_h_4b8939.pth https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth
-            echo "SAM weights downloaded successfully"
+            echo "✅ SAM weights downloaded successfully"
           else
-            echo "SAM weights already exist"
+            echo "✅ SAM weights already exist"
           fi
           
           # Download GroundingDINO weights
           if [ ! -f weights/groundingdino_swint_ogc.pth ]; then
-            echo "Downloading GroundingDINO weights..."
+            echo "📥 Downloading GroundingDINO weights..."
             wget -O weights/groundingdino_swint_ogc.pth https://github.com/IDEA-Research/GroundingDINO/releases/download/v0.1.0-alpha/groundingdino_swint_ogc.pth
-            echo "GroundingDINO weights downloaded successfully"
+            echo "✅ GroundingDINO weights downloaded successfully"
           else
-            echo "GroundingDINO weights already exist"
+            echo "✅ GroundingDINO weights already exist"
           fi
           
           # Create directory for notebook execution
           mkdir -p ../notebooks/executed
           
-          echo "Model weights setup completed"
+          echo "✅ Model weights setup completed"
 
       - name: Prepare notebook for execution
         run: |
@@ -154,18 +176,19 @@ jobs:
           # Create execution directory if it doesn't exist
           mkdir -p executed
           
-          # Copy notebook to execution directory
-          if [ -f ${{ env.NOTEBOOK_NAME }} ]; then
-            cp ${{ env.NOTEBOOK_NAME }} executed/
-            echo "✅ Notebook copied to execution directory"
-          else
-            echo "❌ Notebook ${{ env.NOTEBOOK_NAME }} not found in notebooks directory"
-            echo "Available notebooks in notebooks directory:"
+          # Check if notebook exists
+          if [ ! -f "$NOTEBOOK_NAME" ]; then
+            echo "❌ ERROR: Notebook '$NOTEBOOK_NAME' not found in notebooks directory"
+            echo "Available notebooks:"
             ls -la
             exit 1
           fi
           
-          # Create a wrapper script to ensure proper GPU detection
+          # Copy notebook to execution directory
+          cp "$NOTEBOOK_NAME" executed/
+          echo "✅ Notebook copied to execution directory: notebooks/executed/$NOTEBOOK_NAME"
+          
+          # Create GPU validation script
           cat > executed/gpu_validation.py << 'EOF'
 import torch
 import subprocess
@@ -173,18 +196,18 @@ import sys
 import os
 
 def validate_gpu_environment():
-    """Comprehensive GPU environment validation for AutoDistill pipeline"""
-    print("=== 🔥 GPU ENVIRONMENT VALIDATION FOR EXECUTION ===")
+    """Comprehensive GPU environment validation for HVAC-AI AutoDistill pipeline"""
+    print("=== 🔥 HVAC-AI GPU ENVIRONMENT VALIDATION ===")
     
     # Check CUDA availability
     cuda_available = torch.cuda.is_available()
     print(f"✅ CUDA Available: {cuda_available}")
     
     if not cuda_available:
-        print("❌ FATAL ERROR: CUDA not available. AutoDistill requires GPU acceleration.")
+        print("❌ FATAL ERROR: CUDA not available. AutoDistill pipeline requires GPU acceleration.")
         print("   Troubleshooting steps:")
-        print("   1. Verify NVIDIA drivers are installed")
-        print("   2. Check CUDA toolkit is properly configured")
+        print("   1. Verify NVIDIA drivers are installed (>=535)")
+        print("   2. Check CUDA 12.1 toolkit is properly configured")
         print("   3. Run 'nvidia-smi' to verify GPU detection")
         sys.exit(1)
     
@@ -208,6 +231,10 @@ def validate_gpu_environment():
         gpu_name = torch.cuda.get_device_name(i)
         total_memory = torch.cuda.get_device_properties(i).total_memory / 1e9  # Convert to GB
         print(f"   GPU {i}: {gpu_name} - {total_memory:.1f}GB VRAM")
+        
+        # Warning if less than 16GB VRAM
+        if total_memory < 16.0:
+            print(f"⚠️ WARNING: GPU {i} has only {total_memory:.1f}GB VRAM. HVAC-AI pipeline performs best with 16GB+ VRAM")
     
     # Test CUDA operations
     try:
@@ -218,6 +245,9 @@ def validate_gpu_environment():
         print("✅ CUDA tensor operations successful")
     except Exception as e:
         print(f"❌ CUDA operation failed: {str(e)}")
+        print("   Troubleshooting:")
+        print("   1. Check for CUDA out-of-memory errors")
+        print("   2. Verify CUDA toolkit and driver compatibility")
         sys.exit(1)
     
     # Set CUDA device explicitly
@@ -239,29 +269,31 @@ EOF
           # Activate virtual environment
           source ../../python-services/.venv/bin/activate
           
-          echo "=== 🚀 EXECUTING AUTODISTILL PIPELINE NOTEBOOK ==="
+          echo "=== 🚀 EXECUTING HVAC-AI AUTODISTILL PIPELINE ==="
           echo "Notebook: ${{ env.NOTEBOOK_NAME }}"
-          echo "GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader)"
+          echo "GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader || echo 'Unknown GPU')"
+          echo ""
           
           # First validate GPU environment
+          echo "=== 🔍 VALIDATING GPU ENVIRONMENT ==="
           python gpu_validation.py
+          
+          echo ""
+          echo "=== ⚡ EXECUTING NOTEBOOK WITH GPU ACCELERATION ==="
           
           # Execute notebook with GPU support
           jupyter nbconvert \
             --to notebook \
-            --execute ${{ env.NOTEBOOK_NAME }} \
-            --output executed_${{ env.NOTEBOOK_NAME }} \
-            --ExecutePreprocessor.timeout=7200 \  # 2-hour timeout for large notebooks
+            --execute "${{ env.NOTEBOOK_NAME }}" \
+            --output "executed_${{ env.NOTEBOOK_NAME }}" \
+            --ExecutePreprocessor.timeout=7200 \  # 2-hour timeout
             --ExecutePreprocessor.kernel_name=python3 \
             --log-level=DEBUG
           
+          echo ""
           echo "=== ✅ NOTEBOOK EXECUTION COMPLETED SUCCESSFULLY ==="
           
           # Display execution summary
-          echo "=== EXECUTION SUMMARY ==="
-          echo "Status: SUCCESS"
-          echo "Output notebook: executed_${{ env.NOTEBOOK_NAME }}"
-          echo "GPU utilization during execution:"
           nvidia-smi --query-gpu=utilization.gpu,memory.used --format=csv
 
       - name: Upload executed notebook as artifact
@@ -285,6 +317,7 @@ EOF
             notebooks/executed/*.jpg
             notebooks/executed/*.pt
             notebooks/executed/*.pth
+            notebooks/executed/*.pkl
           retention-days: 7
 
       - name: Post-execution cleanup
@@ -296,19 +329,16 @@ EOF
           echo "Clearing GPU memory cache..."
           python -c "import torch; torch.cuda.empty_cache()"
           
-          # Reset GPU (if needed)
-          echo "Resetting GPU state..."
-          nvidia-smi --gpu-reset || echo "GPU reset not available"
-          
           # Display final GPU state
           echo "=== FINAL GPU STATE ==="
           nvidia-smi
 
-      - name: Generate execution report
+      - name: Generate execution summary
         if: always()
         run: |
-          cat > execution_report.md << EOF
-# AutoDistill Pipeline Execution Report
+          cat > execution_summary.md << EOF
+# HVAC-AI AutoDistill Pipeline Execution Summary
+
 **Workflow:** ${{ github.workflow }}
 **Run ID:** ${{ github.run_id }}
 **Status:** ${{ job.status }}
@@ -324,53 +354,75 @@ EOF
 - **Repository:** ${{ github.repository }}
 - **Branch:** ${{ github.ref_name }}
 
-## Results
-- **Executed Notebook:** [Download](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts)
-- **Pipeline Results:** [Download](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts)
+## Performance Metrics
+- **GPU Utilization:** $(nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader || echo "N/A")
+- **GPU Memory Used:** $(nvidia-smi --query-gpu=memory.used --format=csv,noheader || echo "N/A")
+
+## Artifacts Generated
+- ✅ Executed notebook with outputs
+- ✅ Pipeline results (JSON, CSV, images, model files)
+- ✅ Execution summary report
 
 ## Next Steps
-1. Review the executed notebook for any errors or warnings
-2. Analyze the pipeline results in the artifacts
-3. If execution failed, check the logs for GPU memory issues or CUDA errors
+1. **Download artifacts** from the workflow run
+2. **Review the executed notebook** for any errors or warnings
+3. **Analyze pipeline results** for HVAC component detection accuracy
+4. **Validate model performance** against ground truth data
+
+## Cost Information
+- **GPU Runtime:** ~$3.46/hour for T4 GPU
+- **Estimated Cost:** $(echo "scale=2; $(date +%s -d "${{ job.steps.execute-notebook.outputs.duration }} seconds ago") * 3.46 / 3600" | bc || echo "N/A")
 
 ---
-*This report was automatically generated by GitHub Actions workflow*
+*This summary was automatically generated by GitHub Actions workflow*
 EOF
           
-          echo "✅ Execution report generated"
+          echo "✅ Execution summary generated"
+          
+          # Display summary
+          cat execution_summary.md
 
-      - name: Upload execution report
+      - name: Upload execution summary
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: execution-report-${{ github.sha }}
-          path: execution_report.md
+          name: execution-summary-${{ github.sha }}
+          path: execution_summary.md
           retention-days: 30
 
   notify-completion:
-    needs: run-autodistill-pipeline
+    needs: run-gpu-pipeline
     runs-on: ubuntu-latest
     if: always()
     steps:
       - name: Send completion notification
         run: |
-          STATUS="${{ needs.run-autodistill-pipeline.result }}"
+          STATUS="${{ needs.run-gpu-pipeline.result }}"
           
           if [ "$STATUS" = "success" ]; then
-            echo "🎉 AutoDistill pipeline executed successfully!"
+            echo "🎉 HVAC-AI AutoDistill pipeline executed successfully!"
             echo "✅ All artifacts have been uploaded and are available for download."
+            echo ""
+            echo "📊 KEY RESULTS:"
+            echo "   - GPU-accelerated component detection completed"
+            echo "   - HVAC blueprint analysis successful"
+            echo "   - Model outputs saved as artifacts"
           else
-            echo "🚨 AutoDistill pipeline execution failed!"
+            echo "🚨 HVAC-AI AutoDistill pipeline execution failed!"
             echo "❌ Check the workflow logs for detailed error information."
-            echo "Common issues:"
-            echo "  - GPU memory exhaustion (OSError: CUDA out of memory)"
-            echo "  - CUDA driver compatibility issues"
-            echo "  - Missing model weights or dependencies"
-            echo "  - Notebook execution timeout (2 hours maximum)"
+            echo ""
+            echo "🔧 COMMON TROUBLESHOOTING STEPS:"
+            echo "   - GPU memory exhaustion (OSError: CUDA out of memory)"
+            echo "   - CUDA driver compatibility issues"
+            echo "   - Missing model weights or dependencies"
+            echo "   - Notebook execution timeout (2 hours maximum)"
+            echo "   - Incorrect notebook path or name"
           fi
           
           echo ""
-          echo "📊 GPU Runner Cost Information:"
-          echo "T4 GPU: ~$0.00096 per second (~$3.46/hour)"
-          echo "A10G GPU: ~$0.00192 per second (~$6.91/hour)"
-          echo "💡 Tip: Use smaller GPUs for development, larger GPUs for production runs"
+          echo "💰 COST OPTIMIZATION TIPS:"
+          echo "   - T4 GPU: ~$3.46/hour (most cost-effective for development)"
+          echo "   - A10G GPU: ~$6.91/hour (faster for production runs)"
+          echo "   - L4 GPU: ~$10.37/hour (best for large-scale processing)"
+          echo ""
+          echo "💡 RECOMMENDATION: Use T4 for development/testing, upgrade to A10G/L4 for production deployments"

@@ -1,0 +1,26 @@
+# Requirements for HVAC Autodistill Pipeline
+# Install with: pip install -r requirements_autodistill.txt
+
+# Core ML dependencies
+torch>=2.0.0
+torchvision>=0.15.0
+numpy>=1.24.0
+
+# Autodistill framework and models
+autodistill
+autodistill-grounded-sam-2
+autodistill-yolov8
+
+# YOLO training
+ultralytics>=8.0.0
+
+# Image processing and visualization
+opencv-python>=4.8.0
+matplotlib>=3.7.0
+Pillow>=10.0.0
+
+# Supervision for detection handling
+supervision>=0.19.0
+
+# Utilities
+tqdm>=4.65.0

@@ -1,0 +1,255 @@
+# .github/workflows/autodistill-gpu-pipeline.yml
+name: HVAC-AI AutoDistill GPU Pipeline
+
+# Trigger the workflow manually or on pushes to main/dev affecting the notebook or python services
+on:
+  workflow_dispatch: # Allow manual triggering
+  push:
+    branches: [main, dev]
+    paths:
+      - 'notebooks/**'  # Any changes in notebooks directory
+      - 'python-services/**' # Any changes in Python services
+      - '.github/workflows/autodistill-gpu-pipeline.yml' # Changes to this workflow
+
+jobs:
+  # Single job to run the AutoDistill pipeline on a GPU runner
+  run_autodistill_pipeline:
+    # Use the standard Ubuntu runner
+    runs-on: ubuntu-latest
+    # CRITICAL: Request GPU hardware for this job
+    # Choose the GPU type: T4 (cost-effective), A10G, L4, etc.
+    hardware:
+      gpu: T4 # NVIDIA Tesla T4 GPU (recommended for cost-performance balance)
+    # Set environment variables for consistency
+    env:
+      PYTHON_VERSION: "3.10" # Match your project requirements
+      # Define the notebook file name to execute
+      NOTEBOOK_FILE: "autodistill_pipeline.ipynb" # Update this to match your actual notebook name
+
+    # Define the sequence of steps to execute
+    steps:
+      # Step 1: Get the code from your repository
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # Fetch all history for submodules if needed
+          fetch-depth: 0
+
+      # Step 2: Set up the Python environment
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          # Cache dependencies to speed up subsequent runs
+          cache: 'pip'
+          cache-dependency-path: 'python-services/requirements.txt'
+
+      # Step 3: Install essential system dependencies needed for GPU and image processing
+      - name: Install system dependencies
+        run: |
+          # Update package lists
+          sudo apt-get update
+          # Install basic build tools, graphics libraries, and utilities
+          sudo apt-get install -y \
+            build-essential \
+            curl \
+            wget \
+            unzip \
+            git \
+            libgl1-mesa-glx \
+            libglib2.0-0 \
+            libsm6 \
+            libxext6 \
+            libxrender-dev \
+            libgomp1 \
+            ffmpeg
+
+      # Step 4: Verify GPU is available and working (CRITICAL STEP)
+      - name: Verify GPU and CUDA Availability
+        run: |
+          echo "=== Checking for NVIDIA GPU ==="
+          # Check if NVIDIA GPU is visible in PCI devices
+          if lspci | grep -i nvidia; then
+            echo "✅ NVIDIA GPU detected via lspci"
+          else
+            echo "❌ No NVIDIA GPU detected via lspci. Aborting."
+            exit 1
+          fi
+          
+          echo "=== Checking NVIDIA Driver (nvidia-smi) ==="
+          # Check if nvidia-smi command is available
+          if command -v nvidia-smi &> /dev/null; then
+            echo "✅ nvidia-smi command is available"
+            nvidia-smi # Show GPU status
+          else
+            echo "❌ nvidia-smi command not found. NVIDIA drivers may not be correctly installed. Aborting."
+            exit 1
+          fi
+          
+          echo "=== Checking CUDA Compiler (nvcc) ==="
+          # Check if nvcc (CUDA compiler) is available
+          if command -v nvcc &> /dev/null; then
+            echo "✅ nvcc (CUDA compiler) is available"
+            nvcc --version # Show CUDA version
+          else
+            echo "⚠️ nvcc (CUDA compiler) not found. This might be okay if PyTorch handles CUDA internally."
+            # We won't abort here, as PyTorch often bundles its own CUDA runtime
+          fi
+
+      # Step 5: Install Python dependencies in the python-services directory
+      - name: Install Python Dependencies
+        run: |
+          # Navigate to the Python services directory where requirements.txt is located
+          cd python-services
+          
+          # Create and activate a virtual environment (recommended practice)
+          python -m venv venv
+          source venv/bin/activate
+          
+          # Upgrade pip to latest version
+          pip install --upgrade pip setuptools wheel
+          
+          # Install the project dependencies from requirements.txt
+          pip install -r requirements.txt
+          
+          # Install additional packages required for notebook execution
+          pip install jupyter nbconvert
+          
+          # Confirm PyTorch with CUDA is available
+          python -c "import torch; print(f'PyTorch version: {torch.__version__}'); print(f'CUDA available: {torch.cuda.is_available()}'); print(f'CUDA version: {torch.version.cuda}')"
+          
+          # Deactivate the virtual environment
+          deactivate
+
+      # Step 6: Ensure model weights are available (download if necessary)
+      - name: Ensure Model Weights Are Present
+        run: |
+          cd python-services
+          
+          # Activate the virtual environment
+          source venv/bin/activate
+          
+          # Create weights directory if it doesn't exist
+          mkdir -p weights
+          
+          # Example: Check if a key weight file exists, download if missing
+          # Replace with your actual required weight files
+          WEIGHT_FILE="weights/sam_vit_h_4b8939.pth"
+          if [ ! -f "$WEIGHT_FILE" ]; then
+            echo "Weight file $WEIGHT_FILE not found. Attempting download..."
+            # Example download command (replace with actual URL if public)
+            # wget -O $WEIGHT_FILE <URL_TO_WEIGHT_FILE>
+            echo "⚠️ WARNING: Weight file $WEIGHT_FILE not found and automatic download not configured."
+            echo "   Please ensure all required model weights are in the python-services/weights/ directory."
+            # For now, just warn, but you might want to fail if critical
+            # exit 1
+          else
+            echo "✅ Required weight file $WEIGHT_FILE found."
+          fi
+          
+          # Deactivate the virtual environment
+          deactivate
+
+      # Step 7: Execute the AutoDistill notebook
+      - name: Execute AutoDistill Notebook
+        run: |
+          # Navigate to the notebooks directory
+          cd notebooks
+          
+          # Check if the target notebook exists
+          if [ ! -f "${{ env.NOTEBOOK_FILE }}" ]; then
+            echo "❌ Notebook file ${{ env.NOTEBOOK_FILE }} not found in notebooks directory."
+            echo "Available files in notebooks/:"
+            ls -la
+            exit 1
+          fi
+          
+          # Activate the Python virtual environment from the python-services directory
+          cd ../python-services
+          source venv/bin/activate
+          cd ../notebooks # Navigate back to notebooks to run the notebook
+          
+          echo "🚀 Starting execution of ${{ env.NOTEBOOK_FILE }}..."
+          
+          # Execute the notebook using jupyter nbconvert
+          # --execute: Run the notebook cells
+          # --to notebook: Output as a notebook file (with execution results)
+          # --output: Name of the output file
+          # --ExecutePreprocessor.timeout: Maximum time per cell (in seconds, 0 means no timeout)
+          # --ExecutePreprocessor.kernel_name: Python kernel to use
+          jupyter nbconvert \
+            --execute \
+            --to notebook \
+            --output "executed_${{ env.NOTEBOOK_FILE }}" \
+            --ExecutePreprocessor.timeout=3600 \
+            --ExecutePreprocessor.kernel_name=python3 \
+            "${{ env.NOTEBOOK_FILE }}"
+          
+          # Check the exit code of the jupyter command
+          EXIT_CODE=$?
+          if [ $EXIT_CODE -ne 0 ]; then
+            echo "❌ Notebook execution failed with exit code $EXIT_CODE"
+            exit $EXIT_CODE
+          else
+            echo "✅ Notebook execution completed successfully."
+          fi
+          
+          # Deactivate the virtual environment
+          deactivate
+
+      # Step 8: Upload the executed notebook as an artifact for review
+      - name: Upload Executed Notebook
+        uses: actions/upload-artifact@v4
+        with:
+          name: executed-autodistill-notebook
+          path: notebooks/executed_${{ env.NOTEBOOK_FILE }}
+          retention-days: 7 # Keep artifacts for 7 days
+
+      # Step 9: Upload any generated results from the notebook execution (optional)
+      - name: Upload Pipeline Results (Optional)
+        if: always() # Run this step even if previous steps failed
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-results
+          path: |
+            notebooks/results/**
+            notebooks/output/**
+            notebooks/*.json
+            notebooks/*.csv
+            notebooks/*.png
+            notebooks/*.jpg
+            notebooks/*.jpeg
+            notebooks/*.pdf
+          retention-days: 7 # Keep artifacts for 7 days
+
+      # Step 10: Clean up GPU memory (optional but good practice)
+      - name: Clean Up GPU Memory
+        if: always() # Run this step even if previous steps failed
+        run: |
+          echo "🧹 Cleaning up GPU memory..."
+          # Activate the environment and run a simple Python command to clear cache
+          cd python-services
+          source venv/bin/activate
+          python -c "import torch; torch.cuda.empty_cache() if torch.cuda.is_available() else print('CUDA not available for cleanup')"
+          deactivate
+          echo "✅ GPU memory cleanup completed."
+
+  # Optional: Job to send notifications or perform post-processing
+  notify_completion:
+    # This job runs after the main job completes, regardless of success/failure
+    needs: run_autodistill_pipeline
+    runs-on: ubuntu-latest
+    if: always() # Always run this job
+    steps:
+      - name: Report Completion Status
+        run: |
+          MAIN_JOB_STATUS="${{ needs.run_autodistill_pipeline.result }}"
+          echo "HVAC-AI AutoDistill pipeline finished with status: $MAIN_JOB_STATUS"
+          
+          if [ "$MAIN_JOB_STATUS" = "success" ]; then
+            echo "🎉 The AutoDistill pipeline ran successfully!"
+            echo "Check the 'Artifacts' tab for the executed notebook and results."
+          else
+            echo "🚨 The AutoDistill pipeline encountered an issue (status: $MAIN_JOB_STATUS)."
+            echo "Please review the logs above for troubleshooting information."
+          fi

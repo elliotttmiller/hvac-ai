@@ -433,7 +433,7 @@ The new notebook represents a **complete professional-grade implementation** tha
 5. ✅ Enables **faster iteration and debugging**
 6. ✅ Delivers **production-ready results**
 
-The improvements transform the notebook from a **basic prototypee** into a **professional, production-grade pipeline** suitable for enterprise use.
+The improvements transform the notebook from a **basic prototype** into a **professional, production-grade pipeline** suitable for enterprise use.
 
 ---
 

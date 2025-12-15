@@ -12,21 +12,17 @@ on:
 
 jobs:
   run_autodistill_pipeline:
-    # Use standard Ubuntu runner
-    runs-on: ubuntu-latest
-    # Request GPU hardware
-    hardware:
-      gpu: T4 # NVIDIA Tesla T4 GPU
+    # This assumes you have a self-hosted runner labeled 'gpu'
+    # or a service providing runners with this label
+    runs-on: [ubuntu-latest, gpu] 
     env:
       PYTHON_VERSION: "3.10"
       NOTEBOOK_FILE: "autodistill_pipeline.ipynb" # Update if your notebook name differs
 
     steps:
-      # 1. Checkout code
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. Setup Python
       - name: Set up Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@v5
         with:
@@ -34,7 +30,6 @@ jobs:
           cache: 'pip'
           cache-dependency-path: 'python-services/requirements.txt'
 
-      # 3. Install system dependencies
       - name: Install system dependencies
         run: |
           sudo apt-get update
@@ -52,7 +47,7 @@ jobs:
             libgomp1 \
             ffmpeg
 
-      # 4. Verify GPU availability
+      # This step will fail if the runner does not have an NVIDIA GPU
       - name: Verify GPU and CUDA
         run: |
           echo "=== GPU Check ==="
@@ -60,11 +55,10 @@ jobs:
             echo "✅ nvidia-smi found"
             nvidia-smi
           else
-            echo "❌ nvidia-smi NOT FOUND. GPU setup failed."
+            echo "❌ nvidia-smi NOT FOUND. This runner does not appear to have an NVIDIA GPU or drivers."
             exit 1
           fi
 
-      # 5. Install Python dependencies
       - name: Install Python Dependencies
         run: |
           cd python-services
@@ -85,7 +79,6 @@ jobs:
           "
           deactivate
 
-      # 6. Execute notebook
       - name: Execute AutoDistill Notebook
         run: |
           cd python-services
@@ -105,7 +98,6 @@ jobs:
           fi
           deactivate
 
-      # 7. Upload results
       - name: Upload Executed Notebook
         uses: actions/upload-artifact@v4
         with:

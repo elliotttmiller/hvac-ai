@@ -8,11 +8,22 @@ This directory contains the production-grade HVAC auto-labeling pipeline using G
 
 - **`run_autodistill_pipeline.py`**: Complete end-to-end pipeline script
 - **`requirements_autodistill.txt`**: Python dependencies
-- **`notebooks/autodistill_hvac_grounded_sam2.ipynb`**: Original Jupyter notebook
+- **`notebooks/autodistill_hvac_grounded_sam2.ipynb`**: GPU-optimized Jupyter notebook
+- **`notebooks/autodistill_hvac_pipeline_CPU.ipynb`**: CPU-optimized Jupyter notebook
+- **`notebooks/README_CPU_vs_GPU.md`**: Detailed comparison between GPU and CPU versions
 
 ## System Requirements
 
-### Hardware Requirements
+### Two Versions Available
+
+The pipeline is available in two versions:
+
+1. **GPU Version** (`autodistill_hvac_grounded_sam2.ipynb`) - Recommended for production
+2. **CPU Version** (`autodistill_hvac_pipeline_CPU.ipynb`) - For systems without GPU
+
+See `notebooks/README_CPU_vs_GPU.md` for detailed comparison and usage recommendations.
+
+### GPU Version - Hardware Requirements
 - **GPU**: NVIDIA GPU with CUDA support (required)
   - Minimum 8GB VRAM recommended
   - The pipeline uses Florence-2, SAM-2, and YOLOv8 which require GPU acceleration
@@ -22,14 +33,34 @@ This directory contains the production-grade HVAC auto-labeling pipeline using G
   - Working data: ~5GB (datasets, outputs)
 - **RAM**: Minimum 16GB recommended
 
+### CPU Version - Hardware Requirements
+- **CPU**: Any modern CPU (no GPU required)
+  - More cores = faster processing
+  - x86_64 or ARM architecture supported
+- **Disk Space**: Minimum 20GB free space
+  - Model weights: ~15-20GB
+  - Dependencies: ~5GB (smaller without CUDA)
+  - Working data: ~5GB
+- **RAM**: 8GB minimum, 16GB+ recommended
+- **Performance**: 5-20x slower than GPU version
+
 ### Software Requirements
+
+**GPU Version:**
 - **Python**: 3.8+ (tested with 3.12)
 - **CUDA**: 11.8+ or 12.x
 - **Operating System**: Linux (Ubuntu 20.04+ recommended)
 
+**CPU Version:**
+- **Python**: 3.8+ (tested with 3.12)
+- **CUDA**: Not required
+- **Operating System**: Linux, macOS, or Windows
+
 ## Installation
 
-### 1. Install PyTorch with CUDA Support
+### GPU Version Installation
+
+#### 1. Install PyTorch with CUDA Support
 
 ```bash
 # For CUDA 11.8
@@ -37,6 +68,15 @@ pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cu11
 
 # For CUDA 12.1
 pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+```
+
+### CPU Version Installation
+
+#### 1. Install PyTorch (CPU-only)
+
+```bash
+# CPU-only version (smaller, faster to install)
+pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
 ```
 
 ### 2. Install Autodistill Dependencies

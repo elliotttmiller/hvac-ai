@@ -1,11 +1,26 @@
 # CPU vs GPU Notebook Comparison
 
+## ⚠️ CRITICAL UPDATE - CPU Notebook Limitation Discovered
+
+**Important:** The CPU notebook (`autodistill_hvac_pipeline_CPU.ipynb`) **cannot perform auto-labeling** due to package-level GPU dependencies in `autodistill-grounded-sam-2` that cannot be removed through code optimizations.
+
+### The Issue
+
+The `autodistill-grounded-sam-2` package has **hardcoded dependencies** that require CUDA:
+```
+autodistill-grounded-sam-2 (PyPI package)
+└── autodistill-florence-2 (required dependency)
+    └── flash-attn (GPU-only, requires CUDA toolkit)
+```
+
+Even with CPU-only PyTorch, installing this package attempts to download large CUDA dependencies.
+
 ## Overview
 
-This directory contains two versions of the HVAC Auto-Labeling Pipeline:
+This directory contains versions of the HVAC Auto-Labeling Pipeline:
 
-1. **`autodistill_hvac_grounded_sam2.ipynb`** - GPU-Optimized Version (Original)
-2. **`autodistill_hvac_pipeline_CPU.ipynb`** - CPU-Optimized Version (New)
+1. **`autodistill_hvac_grounded_sam2.ipynb`** - GPU Version (Full Pipeline)
+2. **`autodistill_hvac_pipeline_CPU.ipynb`** - CPU Version (Training/Inference Only)
 
 ## When to Use Each Version
 
@@ -20,21 +35,23 @@ This directory contains two versions of the HVAC Auto-Labeling Pipeline:
 
 ### Use CPU Version (`autodistill_hvac_pipeline_CPU.ipynb`) When:
 
-- ✅ No GPU available
-- ✅ Small datasets (< 10 images)
-- ✅ Development and testing
-- ✅ Learning the pipeline
-- ✅ Budget constraints
-- ✅ CPU-only cloud environments
+- ⚠️ **Important:** CPU version can only do **training/inference with pre-existing labels**
+- ✅ You have a pre-labeled YOLO dataset
+- ✅ Training YOLOv8 on CPU (slower but functional)
+- ✅ Running inference on CPU
+- ✅ Learning the training/inference workflow
+- ❌ Cannot perform auto-labeling (requires GPU notebook)
 
 ## Performance Comparison
 
-| Operation | CPU Time | GPU Time | Speed Difference |
-|-----------|----------|----------|------------------|
-| **Auto-labeling** (5 images) | 1-5 minutes | 15-30 seconds | 5-10x slower |
-| **Training** (50 epochs) | 2-4 hours | 5-15 minutes | 10-20x slower |
-| **Training** (100 epochs) | 4-8 hours | 10-30 minutes | 10-20x slower |
-| **Inference** (per image) | 1-5 seconds | 0.1-0.5 seconds | 5-10x slower |
+| Operation | CPU Time | GPU Time | CPU Capability |
+|-----------|----------|----------|----------------|
+| **Auto-labeling** (5 images) | N/A | 15-30 seconds | ❌ **NOT POSSIBLE** |
+| **Training** (50 epochs) | 2-4 hours | 5-15 minutes | ✅ Functional (slower) |
+| **Training** (100 epochs) | 4-8 hours | 10-30 minutes | ✅ Functional (slower) |
+| **Inference** (per image) | 1-5 seconds | 0.1-0.5 seconds | ✅ Functional (slower) |
+
+**Note:** CPU auto-labeling times are marked N/A because the autodistill-grounded-sam-2 package cannot be installed on CPU-only systems.
 
 ## Key Differences
 

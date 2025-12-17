@@ -1,6 +1,6 @@
 """
-YOLO11 Inference Module (Optimization Replacement for SAM)
-Handles loading the fine-tuned HVAC model and processing images.
+YOLO11 Inference Module (Frontend Compatible)
+Handles loading the fine-tuned HVAC model and converting outputs to SAM-style RLE.
 """
 
 import logging
@@ -10,13 +10,13 @@ import torch
 import cv2
 from typing import Dict, List, Any, Optional
 from ultralytics import YOLO
+from pycocotools import mask as mask_utils
 
 logger = logging.getLogger(__name__)
 
 class YOLOInferenceEngine:
     def __init__(self, model_path: str, device: Optional[str] = None):
         self.model_path = model_path
-        # Auto-detect device if not provided
         if not device:
             self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         else:
@@ -26,58 +26,63 @@ class YOLOInferenceEngine:
         self._load_model()
 
     def _load_model(self):
-        """Loads the YOLO11-Seg model."""
         try:
             logger.info(f"🚀 Loading YOLO11 model from: {self.model_path}")
-            # Ultralytics handles loading logic automatically
             self.model = YOLO(self.model_path)
             self.model.to(self.device)
-            
-            # Log class names to verify correct model loading
             logger.info(f"✅ Model loaded. Classes: {self.model.names}")
             
-            # Warmup run to initialize CUDA context
+            # Warmup
             dummy_input = np.zeros((640, 640, 3), dtype=np.uint8)
             self.model.predict(dummy_input, verbose=False)
-            logger.info("🔥 Model warmed up and ready.")
             
         except Exception as e:
             logger.error(f"❌ Failed to load YOLO model: {e}")
             raise RuntimeError(f"Could not initialize YOLO model.")
 
-    def predict(self, image: np.ndarray, conf_threshold: float = 0.25, iou_threshold: float = 0.45) -> Dict[str, Any]:
+    def _polygon_to_rle(self, polygon: np.ndarray, height: int, width: int) -> Dict:
         """
-        Run inference on a single image.
+        Converts a polygon point list into a COCO RLE dictionary.
+        Format: {"size": [h, w], "counts": "string"}
+        """
+        if len(polygon) == 0:
+            return None
+
+        # Create a blank binary mask
+        mask = np.zeros((height, width), dtype=np.uint8)
+        # Draw the polygon on the mask (filled)
+        # polygon needs to be shape (N, 1, 2) for fillPoly, currently (N, 2)
+        pts = polygon.astype(np.int32).reshape((-1, 1, 2))
+        cv2.fillPoly(mask, [pts], 1)
+
+        # Encode to RLE (Fortran array required)
+        rle = mask_utils.encode(np.asfortranarray(mask))
         
-        Args:
-            image: Numpy array (H, W, C) - RGB
-            conf_threshold: Confidence threshold for detection
-            iou_threshold: NMS threshold for overlap removal
-            
-        Returns:
-            Dict containing formatted results for the frontend.
-        """
+        # Decode bytes to string for JSON serialization
+        rle['counts'] = rle['counts'].decode('utf-8')
+        return rle
+
+    def predict(self, image: np.ndarray, conf_threshold: float = 0.25, iou_threshold: float = 0.45) -> Dict[str, Any]:
         start_time = time.perf_counter()
         
+        # Get original image dimensions for correct RLE sizing
+        orig_h, orig_w = image.shape[:2]
+
         # Run Inference
-        # retina_masks=True ensures high-quality polygon edges
         results = self.model.predict(
             image, 
             conf=conf_threshold, 
             iou=iou_threshold, 
-            retina_masks=True,
+            retina_masks=True, # High quality masks
             verbose=False
-        )[0] # We only process one image at a time
+        )[0]
 
         processing_time_ms = (time.perf_counter() - start_time) * 1000
         
-        # Parse Results
         detections = []
         class_counts = {}
 
-        # If no objects detected, return empty
         if not results.boxes:
-            logger.info(f"No objects detected. Time: {processing_time_ms:.2f}ms")
             return {
                 "total_objects_found": 0,
                 "counts_by_category": {},
@@ -85,46 +90,34 @@ class YOLOInferenceEngine:
                 "processing_time_ms": processing_time_ms
             }
 
-        # Iterate through detections
-        # YOLOv8/11 returns boxes and masks containers
         for i, box in enumerate(results.boxes):
             cls_id = int(box.cls[0])
             class_name = self.model.names[cls_id]
             confidence = float(box.conf[0])
-            
-            # Bounding Box (x1, y1, x2, y2)
-            # Convert to int list for JSON serialization
             bbox = box.xyxy[0].cpu().numpy().astype(int).tolist()
             
-            # Polygon Mask
-            # results.masks.xy is a list of arrays (one per object) containing polygon points
-            polygon = []
+            # Generate RLE Mask
+            rle_mask = None
             if results.masks is not None:
-                # Get the polygon points for this specific detection
-                # Format: [[x1, y1], [x2, y2], ...]
-                poly_points = results.masks.xy[i]
-                # Flatten to simple list [x1, y1, x2, y2...] or keep as list of points depending on frontend needs
-                # Here we keep as list of lists for clarity
-                polygon = poly_points.tolist()
+                # Get polygon points for this detection
+                poly = results.masks.xy[i]
+                # Convert to RLE
+                rle_mask = self._polygon_to_rle(poly, orig_h, orig_w)
 
-            # Update Counts
             class_counts[class_name] = class_counts.get(class_name, 0) + 1
 
-            # Append to results
             detections.append({
                 "id": i,
                 "label": class_name,
                 "score": confidence,
-                "bbox": bbox,       # [x_min, y_min, x_max, y_max]
-                "polygon": polygon, # Actual contour points of the object
+                "bbox": bbox,
+                "mask": rle_mask, # <--- THIS IS WHAT THE FRONTEND NEEDS
             })
-
-        logger.info(f"✅ Detected {len(detections)} objects. Time: {processing_time_ms:.2f}ms")
 
         return {
             "total_objects_found": len(detections),
             "counts_by_category": class_counts,
-            "segments": detections, # Frontend expects 'segments' list
+            "segments": detections,
             "processing_time_ms": processing_time_ms
         }
 

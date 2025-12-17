@@ -39,7 +39,7 @@ export default function ProjectsPage() {
 	React.useEffect(() => {
 		let mounted = true;
 		setLoading(true);
-		fetch('/api/projects')
+		fetch('/api/projects', { headers: { 'ngrok-skip-browser-warning': '69420' } })
 			.then((res) => res.json())
 			.then((data) => {
 				if (!mounted) return;
@@ -51,7 +51,7 @@ export default function ProjectsPage() {
 	}, []);
 
 	const handleDeleteProject = (id: string) => {
-		fetch(`/api/projects?id=${id}`, { method: 'DELETE' })
+		fetch(`/api/projects?id=${id}`, { method: 'DELETE', headers: { 'ngrok-skip-browser-warning': '69420' } })
 			.then((res) => {
 				if (!res.ok) throw new Error('Delete failed');
 				setProjects((prev) => prev.filter((p) => p.id !== id));

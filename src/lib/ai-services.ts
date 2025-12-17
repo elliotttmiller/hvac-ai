@@ -38,6 +38,9 @@ export class ConstructionAIService {
 export async function deleteProject(id: string) {
   const res = await fetch(`/api/projects?id=${id}`, {
     method: 'DELETE',
+    headers: {
+      'ngrok-skip-browser-warning': '69420'
+    }
   });
   if (!res.ok) {
     throw new Error('Failed to delete project');

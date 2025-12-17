@@ -62,7 +62,7 @@ export async function POST(request: NextRequest) {
       targetUrl = `${PYTHON_SERVICE_URL}/api/v1/count`;
     }
 
-    const response = await fetch(targetUrl, { method: 'POST', body: pythonFormData });
+  const response = await fetch(targetUrl, { method: 'POST', body: pythonFormData, headers: { 'ngrok-skip-browser-warning': '69420' } });
 
     // Read response safely: some endpoints (or ngrok) may return HTML on error
     // Read response safely: some endpoints (or ngrok) may return HTML on error
@@ -101,7 +101,8 @@ export async function GET(request: NextRequest) {
     }
 
     const response = await fetch(
-      `${PYTHON_SERVICE_URL}/api/analyze/${analysisId}`
+      `${PYTHON_SERVICE_URL}/api/analyze/${analysisId}`,
+      { headers: { 'ngrok-skip-browser-warning': '69420' } }
     );
 
     if (!response.ok) {

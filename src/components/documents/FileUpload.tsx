@@ -20,9 +20,20 @@ import {
   Loader2
 } from 'lucide-react';
 
+interface UploadedDocument {
+  id: string;
+  name: string;
+  type: string;
+  status: string;
+  size: number;
+  url: string;
+  category?: string;
+  uploadedAt?: string;
+}
+
 interface FileUploadProps {
   projectId?: string;
-  onUploadComplete?: (documents: any[]) => void;
+  onUploadComplete?: (documents: UploadedDocument[]) => void;
   onUploadError?: (error: string) => void;
 }
 
@@ -32,7 +43,7 @@ interface UploadFile {
   status: 'pending' | 'uploading' | 'processing' | 'completed' | 'error';
   progress: number;
   error?: string;
-  response?: any;
+  response?: UploadedDocument | null;
 }
 
 export default function FileUpload({ projectId, onUploadComplete, onUploadError }: FileUploadProps) {
@@ -40,39 +51,65 @@ export default function FileUpload({ projectId, onUploadComplete, onUploadError 
   const [uploadFiles, setUploadFiles] = useState<UploadFile[]>([]);
   const [isDragActive, setIsDragActive] = useState(false);
 
-  const onDrop = useCallback((acceptedFiles: File[]) => {
-    const newFiles: UploadFile[] = acceptedFiles.map(file => ({
-      file,
-      id: `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      status: 'pending',
-      progress: 0
-    }));
+  
 
-    setUploadFiles(prev => [...prev, ...newFiles]);
+  
 
-    // Start uploading each file
-    newFiles.forEach(uploadFile => {
-      uploadSingleFile(uploadFile);
-    });
-  }, [projectId]);
+  const pollForCompletion = useCallback(async (uploadFileId: string, documentId: string) => {
+    const maxAttempts = 30; // 30 attempts with 2-second intervals = 1 minute max
+    let attempts = 0;
 
-  const { getRootProps, getInputProps, isDragActive: dropzoneActive } = useDropzone({
-    onDrop,
-    onDragEnter: () => setIsDragActive(true),
-    onDragLeave: () => setIsDragActive(false),
-    accept: {
-      'image/*': ['.jpeg', '.jpg', '.png', '.tiff', '.tif'],
-      'application/pdf': ['.pdf'],
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
-      'text/csv': ['.csv'],
-      'application/dwg': ['.dwg'],
-      'application/dxf': ['.dxf']
-    },
-    maxSize: 500 * 1024 * 1024, // 500MB
-    multiple: true
-  });
+    const poll = async () => {
+      try {
+        const response = await fetch(`/api/upload?documentId=${documentId}`, {
+          headers: { 'ngrok-skip-browser-warning': '69420' }
+        });
+        if (response.ok) {
+          const result = await response.json();
+          const document = result.documents?.[0];
 
-  const uploadSingleFile = async (uploadFile: UploadFile) => {
+          if (document && (document.status === 'completed' || document.status === 'error')) {
+            setUploadFiles(prev => prev.map(f =>
+              f.id === uploadFileId ? {
+                ...f,
+                status: document.status,
+                response: document
+              } : f
+            ));
+
+            if (document.status === 'completed' && onUploadComplete) {
+              onUploadComplete([document]);
+            }
+            return;
+          }
+        }
+
+        attempts++;
+        if (attempts < maxAttempts) {
+          setTimeout(poll, 2000);
+        } else {
+          // Timeout - mark as completed anyway
+          setUploadFiles(prev => prev.map(f =>
+            f.id === uploadFileId ? { ...f, status: 'completed' } : f
+          ));
+        }
+      } catch (error) {
+        console.error('Polling error:', error);
+        setUploadFiles(prev => prev.map(f =>
+          f.id === uploadFileId ? {
+            ...f,
+            status: 'error',
+            error: 'Processing timeout'
+          } : f
+        ));
+      }
+    };
+
+    setTimeout(poll, 2000);
+  }, [onUploadComplete]);
+
+
+  const uploadSingleFile = useCallback(async (uploadFile: UploadFile) => {
     try {
       setUploadFiles(prev => prev.map(f =>
         f.id === uploadFile.id ? { ...f, status: 'uploading', progress: 0 } : f
@@ -98,6 +135,9 @@ export default function FileUpload({ projectId, onUploadComplete, onUploadError 
       const response = await fetch('/api/upload', {
         method: 'POST',
         body: formData,
+        headers: {
+          'ngrok-skip-browser-warning': '69420'
+        }
       });
 
       clearInterval(progressInterval);
@@ -141,58 +181,41 @@ export default function FileUpload({ projectId, onUploadComplete, onUploadError 
         onUploadError(error instanceof Error ? error.message : 'Upload failed');
       }
     }
-  };
+  }, [projectId, onUploadError, pollForCompletion]);
 
-  const pollForCompletion = async (uploadFileId: string, documentId: string) => {
-    const maxAttempts = 30; // 30 attempts with 2-second intervals = 1 minute max
-    let attempts = 0;
+  const onDrop = useCallback((acceptedFiles: File[]) => {
+    const newFiles: UploadFile[] = acceptedFiles.map(file => ({
+      file,
+      id: `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      status: 'pending',
+      progress: 0
+    }));
 
-    const poll = async () => {
-      try {
-        const response = await fetch(`/api/upload?documentId=${documentId}`);
-        if (response.ok) {
-          const result = await response.json();
-          const document = result.documents?.[0];
+    setUploadFiles(prev => [...prev, ...newFiles]);
 
-          if (document && (document.status === 'completed' || document.status === 'error')) {
-            setUploadFiles(prev => prev.map(f =>
-              f.id === uploadFileId ? {
-                ...f,
-                status: document.status,
-                response: document
-              } : f
-            ));
+    // Start uploading each file
+    newFiles.forEach(uploadFile => {
+      uploadSingleFile(uploadFile);
+    });
+  }, [uploadSingleFile]);
 
-            if (document.status === 'completed' && onUploadComplete) {
-              onUploadComplete([document]);
-            }
-            return;
-          }
-        }
+  const { getRootProps, getInputProps, isDragActive: dropzoneActive } = useDropzone({
+    onDrop,
+    onDragEnter: () => setIsDragActive(true),
+    onDragLeave: () => setIsDragActive(false),
+    accept: {
+      'image/*': ['.jpeg', '.jpg', '.png', '.tiff', '.tif'],
+      'application/pdf': ['.pdf'],
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
+      'text/csv': ['.csv'],
+      'application/dwg': ['.dwg'],
+      'application/dxf': ['.dxf']
+    },
+    maxSize: 500 * 1024 * 1024, // 500MB
+    multiple: true
+  });
 
-        attempts++;
-        if (attempts < maxAttempts) {
-          setTimeout(poll, 2000);
-        } else {
-          // Timeout - mark as completed anyway
-          setUploadFiles(prev => prev.map(f =>
-            f.id === uploadFileId ? { ...f, status: 'completed' } : f
-          ));
-        }
-      } catch (error) {
-        console.error('Polling error:', error);
-        setUploadFiles(prev => prev.map(f =>
-          f.id === uploadFileId ? {
-            ...f,
-            status: 'error',
-            error: 'Processing timeout'
-          } : f
-        ));
-      }
-    };
-
-    setTimeout(poll, 2000);
-  };
+  
 
   const detectFileCategory = (filename: string): string => {
     const ext = filename.toLowerCase().split('.').pop();

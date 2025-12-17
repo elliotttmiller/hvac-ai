@@ -75,6 +75,9 @@ export default function TopHeader({ className }: TopHeaderProps) {
       try {
         await fetch('/api/auth/direct-logout', {
           method: 'POST',
+          headers: {
+            'ngrok-skip-browser-warning': '69420'
+          }
         });
 
         // Clear localStorage

@@ -257,6 +257,9 @@ export default function SAMAnalysis({
         const response = await fetch(`${API_BASE_URL}/health`, {
           method: 'GET',
           signal: AbortSignal.timeout(5000), // 5 second timeout
+          headers: {
+            'ngrok-skip-browser-warning': '69420'
+          }
         });
 
         if (response.ok) {
@@ -361,7 +364,7 @@ export default function SAMAnalysis({
       formData.append('image', uploadedImage);
       formData.append('coords', `${point.x},${point.y}`);
 
-      const response = await fetch(`${API_BASE_URL}/api/analyze`, { method: 'POST', body: formData });
+  const response = await fetch(`${API_BASE_URL}/api/analyze`, { method: 'POST', body: formData, headers: { 'ngrok-skip-browser-warning': '69420' } });
 
       if (!response.ok) {
         const errorData = await response.json();
@@ -413,7 +416,7 @@ export default function SAMAnalysis({
 
       toastId = toast.loading('Analyzing and counting all components...', { duration: Infinity });
 
-      const response = await fetch(`${API_BASE_URL}/api/count`, { method: 'POST', body: formData });
+  const response = await fetch(`${API_BASE_URL}/api/count`, { method: 'POST', body: formData, headers: { 'ngrok-skip-browser-warning': '69420' } });
       
       if (!response.ok) {
         const errorData = await response.json();

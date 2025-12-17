@@ -27,6 +27,7 @@ export async function POST(request: NextRequest) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': '69420'
         },
         body: JSON.stringify({
           analysis_id: analysisId,
@@ -69,7 +70,8 @@ export async function GET(request: NextRequest) {
     }
 
     const response = await fetch(
-      `${PYTHON_SERVICE_URL}/api/estimate/${estimationId}`
+      `${PYTHON_SERVICE_URL}/api/estimate/${estimationId}`,
+      { headers: { 'ngrok-skip-browser-warning': '69420' } }
     );
 
     if (!response.ok) {

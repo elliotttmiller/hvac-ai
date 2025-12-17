@@ -80,6 +80,9 @@ export default function HVACBlueprintUploader({ onAnalysisComplete }: HVACBluepr
       const response = await fetch('/api/hvac/analyze', {
         method: 'POST',
         body: formData,
+        headers: {
+          'ngrok-skip-browser-warning': '69420'
+        }
       });
       setProgress(70);
 

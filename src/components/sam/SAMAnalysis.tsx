@@ -20,7 +20,7 @@ import {
   FileBarChart,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { decodeRLEMask, drawMaskOnCanvas } from '@/lib/rle-decoder';
+import { drawMaskOnCanvas } from '@/lib/mask-utils';
 
 // --- Type Definitions ---
 type AnalysisState = 'idle' | 'segmenting' | 'counting';
@@ -87,6 +87,80 @@ export default function SAMAnalysis({
         ];
         const color = colors[index % colors.length];
 
+        // Prefer polygon/vector masks when provided (highest fidelity for the frontend)
+        /* eslint-disable @typescript-eslint/no-explicit-any */
+        const segAny = segment as any;
+        const displayFormat = segAny.displayFormat || null;
+        const displayMask = segAny.displayMask ?? null;
+
+        if (displayFormat === 'polygon' || segAny.polygon) {
+          // Normalize polygon(s) into an array of polygon arrays: [[x,y], ...] or [[...],[...]]
+          let polys: number[][][] = [];
+          const polySource = (segAny.polygon || displayMask) as any;
+          try {
+            const arr = Array.isArray(polySource) ? polySource : [];
+            if (arr.length === 0) polys = [];
+            else if (Array.isArray(arr[0]) && Array.isArray(arr[0][0])) {
+              // Already list of polygons
+              polys = arr as number[][][];
+            } else {
+              // single polygon
+              polys = [arr as number[][]];
+            }
+          } catch (e) {
+            polys = [];
+          }
+
+          if (polys.length > 0) {
+            ctx.save();
+            ctx.fillStyle = `rgba(${[0,255,0][0]}, ${[0,255,0][1]}, ${[0,255,0][2]}, 0.35)`;
+            // Use color per segment like original code
+            const colors: [number, number, number][] = [
+              [0, 255, 0], [255, 0, 0], [0, 0, 255], [255, 255, 0], [255, 0, 255], [0, 255, 255]
+            ];
+            const color = colors[index % colors.length];
+            ctx.fillStyle = `rgba(${color[0]}, ${color[1]}, ${color[2]}, 0.35)`;
+            ctx.strokeStyle = `rgb(${color.join(',')})`;
+            ctx.lineWidth = 2;
+
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
+            for (const p of polys) {
+              if (!Array.isArray(p) || p.length === 0) continue;
+              ctx.beginPath();
+              for (let vi = 0; vi < p.length; vi++) {
+                const [px, py] = p[vi];
+                if (vi === 0) ctx.moveTo(px, py);
+                else ctx.lineTo(px, py);
+                if (px < minX) minX = px;
+                if (py < minY) minY = py;
+                if (px > maxX) maxX = px;
+                if (py > maxY) maxY = py;
+              }
+              ctx.closePath();
+              ctx.fill();
+              ctx.stroke();
+            }
+
+            // Draw label near the polygon bounding box
+            const labelText = `${segment.label} (${(segment.score * 100).toFixed(1)}%)`;
+            const fontSize = Math.max(10, 14);
+            ctx.font = `${fontSize}px Arial`;
+            const labelWidth = ctx.measureText(labelText).width + 10;
+            const labelHeight = fontSize + 8;
+            const labelX = Math.max(0, isFinite(minX) ? minX : 0);
+            const labelY = Math.max(labelHeight, isFinite(minY) ? minY : labelHeight);
+
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            ctx.fillRect(labelX, labelY - labelHeight, labelWidth, labelHeight);
+            ctx.fillStyle = 'white';
+            ctx.fillText(labelText, labelX + 5, labelY - (labelHeight - fontSize) / 2 - 2);
+
+            ctx.restore();
+            return; // drawn polygon, skip other mask paths
+          }
+        }
+
         // If the backend provided a PNG (base64) for the mask, prefer that for robust rendering
         if (segment.mask_png) {
           const maskImg = new Image();
@@ -149,43 +223,20 @@ export default function SAMAnalysis({
           ctx.fillStyle = 'white';
           ctx.fillText(labelText, labelX + 5, labelY - (labelHeight - fontSize) / 2 - 2);
         } else {
-          // Fallback: decode RLE on client (legacy path)
-          const maskArray = decodeRLEMask(segment.mask);
-          if (maskArray.length === 0) return;
-
-          // Mask dimensions
-          const maskHeight = maskArray.length;
-          const maskWidth = maskArray[0]?.length || 0;
-          if (!maskWidth || !maskHeight) return;
-
-          // Create offscreen canvas at mask resolution and draw the mask there
-          const off = document.createElement('canvas');
-          off.width = maskWidth;
-          off.height = maskHeight;
-          const offCtx = off.getContext('2d');
-          if (!offCtx) return;
-
-          // Draw mask into offscreen canvas using existing util
-          drawMaskOnCanvas(offCtx, maskArray, color, 0.4);
-
-          // Now draw the offscreen canvas onto main canvas scaling to current canvas size
-          ctx.drawImage(off, 0, 0, canvas.width, canvas.height);
-
-          // Scale bbox and label positions from mask-space to canvas-space
+          // Fallback: neither polygon nor mask_png provided — draw bbox and label only
+          /* eslint-enable @typescript-eslint/no-explicit-any */
           const [bx, by, bw, bh] = segment.bbox;
-          const scaleX = canvas.width / maskWidth;
-          const scaleY = canvas.height / maskHeight;
-          const sx = bx * scaleX;
-          const sy = by * scaleY;
-          const sw = bw * scaleX;
-          const sh = bh * scaleY;
+          const sx = bx;
+          const sy = by;
+          const sw = bw;
+          const sh = bh;
 
           ctx.strokeStyle = `rgb(${color.join(',')})`;
-          ctx.lineWidth = Math.max(1, 2 * ((scaleX + scaleY) / 2));
+          ctx.lineWidth = 2;
           ctx.strokeRect(sx, sy, sw, sh);
 
           const labelText = `${segment.label} (${(segment.score * 100).toFixed(1)}%)`;
-          const fontSize = Math.max(10, Math.round(14 * ((scaleX + scaleY) / 2)));
+          const fontSize = Math.max(10, 14);
           ctx.font = `${fontSize}px Arial`;
           const textMetrics = ctx.measureText(labelText);
           const labelWidth = textMetrics.width + 10;

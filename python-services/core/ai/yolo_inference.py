@@ -10,12 +10,14 @@ Notes:
   full RLE encoding is required).
 """
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Callable
 import time
 import logging
 import numpy as np
 
 logger = logging.getLogger(__name__)
+
+# Note: RLE/pycocotools removed — this engine returns polygon coordinates only.
 
 
 class YOLOInferenceEngine:
@@ -29,19 +31,11 @@ class YOLOInferenceEngine:
     def __init__(self, model: Any):
         self.model = model
 
-    def _polygon_to_rle(self, poly: Any, height: int, width: int) -> Optional[Dict[str, Any]]:
-        """Convert polygon-like mask into a simple RLE-like placeholder.
+    # RLE removed — polygon rasterization/encoding is no longer performed by the engine.
+    # The engine now returns polygon coordinates in `segments[].polygon` and leaves
+    # any pixel-level encoding (PNG) to a different service if required.
 
-        This is a lightweight placeholder. If the service needs proper COCO RLE
-        encoding, replace this with pycocotools.mask.encode logic.
-        """
-        try:
-            # If poly is already a list of polygons, we return a shim dict.
-            return {"counts": [], "size": [height, width]}
-        except Exception:
-            return None
-
-    def predict(self, image: np.ndarray, conf_threshold: float = 0.50) -> Dict[str, Any]:
+    def predict(self, image: np.ndarray, conf_threshold: float = 0.50, progress_callback: Optional[Callable[[Dict[str, Any]], None]] = None) -> Dict[str, Any]:
         """Run inference and return a simple, serializable result dict.
 
         Args:
@@ -57,6 +51,11 @@ class YOLOInferenceEngine:
         image_area = orig_h * orig_w
 
         logger.info("📥 [PROCESS] Received Image: %dx%d pixels", orig_w, orig_h)
+        if progress_callback:
+            try:
+                progress_callback({"type": "status", "message": "received", "width": orig_w, "height": orig_h})
+            except Exception:
+                logger.debug("progress_callback failed at start", exc_info=True)
 
         # Run inference: keep a lower internal conf to capture edge cases and
         # perform the final filtering below using conf_threshold.
@@ -78,6 +77,7 @@ class YOLOInferenceEngine:
         skipped_low_conf = 0
 
         # Iterate over boxes in the Ultralytics results object.
+        total_boxes = len(results.boxes) if hasattr(results, 'boxes') else 0
         for i, box in enumerate(results.boxes):
             try:
                 cls_id = int(box.cls[0])
@@ -103,12 +103,30 @@ class YOLOInferenceEngine:
                     continue
 
                 rle_mask = None
+                polygon_coords = None
                 if getattr(results, "masks", None) is not None:
                     try:
                         poly = results.masks.xy[i]
+                        # Keep original polygon coordinates (list of [x,y] or list of polygons)
+                        try:
+                            arr = np.asarray(poly)
+                            if arr.ndim == 2:
+                                polygon_coords = arr.astype(int).tolist()
+                            elif arr.ndim == 3:
+                                polygon_coords = [p.astype(int).tolist() for p in arr]
+                            else:
+                                polygon_coords = np.asarray(poly).tolist()
+                        except Exception:
+                            # Fallback: attempt to coerce into python lists
+                            try:
+                                polygon_coords = [list(map(int, xy)) for xy in poly]
+                            except Exception:
+                                polygon_coords = None
+
                         rle_mask = self._polygon_to_rle(poly, orig_h, orig_w)
                     except Exception:
                         rle_mask = None
+                        polygon_coords = None
 
                 class_counts[class_name] = class_counts.get(class_name, 0) + 1
                 detections.append({
@@ -117,7 +135,22 @@ class YOLOInferenceEngine:
                     "score": confidence,
                     "bbox": [x1, y1, x2, y2],
                     "mask": rle_mask,
+                    "rle": rle_mask,
+                    "polygon": polygon_coords,
                 })
+                # Emit progress update after each accepted detection
+                if progress_callback:
+                    try:
+                        percent = int(((i + 1) / max(1, total_boxes)) * 80)
+                        progress_callback({
+                            "type": "progress",
+                            "index": i,
+                            "label": class_name,
+                            "score": confidence,
+                            "percent": percent,
+                        })
+                    except Exception:
+                        logger.debug("progress_callback failed during loop", exc_info=True)
             except Exception:
                 logger.exception("Error processing detection %s", i)
                 continue
@@ -126,9 +159,18 @@ class YOLOInferenceEngine:
         logger.info("🗑️ [FILTER] Removed %d boxes below %s confidence.", skipped_low_conf, conf_threshold)
         logger.info("✅ [FINAL] Returning %d valid components.", len(detections))
 
-        return {
+        result = {
             "total_objects_found": len(detections),
             "counts_by_category": class_counts,
             "segments": detections,
             "processing_time_ms": processing_time_ms,
         }
+
+        # Final progress/result notification
+        if progress_callback:
+            try:
+                progress_callback({"type": "result", "result": result})
+            except Exception:
+                logger.debug("progress_callback failed at end", exc_info=True)
+
+        return result

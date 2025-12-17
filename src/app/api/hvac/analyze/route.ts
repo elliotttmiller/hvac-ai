@@ -25,7 +25,11 @@ export async function POST(request: NextRequest) {
     // Python service expects the file under the 'image' field
     pythonFormData.append('image', incomingFile);
 
-    let targetUrl = '';
+  let targetUrl = '';
+
+  // Detect whether the client requested a streaming response (SSE).
+  const { searchParams } = new URL(request.url);
+  const wantsStream = searchParams.get('stream') === '1' || (request.headers.get('accept') || '').includes('text/event-stream');
 
     if (coords || prompt) {
       // Segment request — backend expects 'coords' as a string "x,y"
@@ -62,22 +66,29 @@ export async function POST(request: NextRequest) {
       targetUrl = `${PYTHON_SERVICE_URL}/api/v1/count`;
     }
 
+  // If the client asked for a streaming response, forward the upstream
+  // streaming body directly to the caller (preserving content-type).
+  if (wantsStream) {
+    const upstream = await fetch(`${PYTHON_SERVICE_URL}/api/v1/analyze/stream`, { method: 'POST', body: pythonFormData, headers: { 'ngrok-skip-browser-warning': '69420' } });
+    // Return the upstream body directly as a passthrough response.
+    return new Response(upstream.body, { status: upstream.status, headers: { 'content-type': upstream.headers.get('content-type') || 'text/event-stream' } });
+  }
+
   const response = await fetch(targetUrl, { method: 'POST', body: pythonFormData, headers: { 'ngrok-skip-browser-warning': '69420' } });
 
-    // Read response safely: some endpoints (or ngrok) may return HTML on error
-    // Read response safely: some endpoints (or ngrok) may return HTML on error
-    const contentType = response.headers.get('content-type') || '';
-    const isJson = contentType.includes('application/json');
+  // Read response safely: some endpoints (or ngrok) may return HTML on error
+  const contentType = response.headers.get('content-type') || '';
+  const isJson = contentType.includes('application/json');
 
-    if (!response.ok) {
-      const raw = isJson ? await response.json().catch(() => null) : await response.text().catch(() => null);
-      const message = raw && typeof raw === 'object' ? (raw.detail || JSON.stringify(raw)) : String(raw || 'Analysis failed');
-      console.error('Python service error', response.status, message);
-      return NextResponse.json({ error: message }, { status: response.status });
-    }
+  if (!response.ok) {
+    const raw = isJson ? await response.json().catch(() => null) : await response.text().catch(() => null);
+    const message = raw && typeof raw === 'object' ? (raw.detail || JSON.stringify(raw)) : String(raw || 'Analysis failed');
+    console.error('Python service error', response.status, message);
+    return NextResponse.json({ error: message }, { status: response.status });
+  }
 
-    const data = isJson ? await response.json() : await response.text();
-    return NextResponse.json(isJson ? data : { raw: data });
+  const data = isJson ? await response.json() : await response.text();
+  return NextResponse.json(isJson ? data : { raw: data });
 
   } catch (error) {
     console.error('Blueprint analysis error:', error);

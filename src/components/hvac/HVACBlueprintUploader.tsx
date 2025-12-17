@@ -69,35 +69,78 @@ export default function HVACBlueprintUploader({ onAnalysisComplete }: HVACBluepr
     setAnalyzing(true);
     setError(null);
     setProgress(10);
-
     try {
       const formData = new FormData();
       formData.append('file', uploadedFile.file);
       if (projectId) formData.append('projectId', projectId);
       if (location) formData.append('location', location);
 
-      setProgress(30);
-      const response = await fetch('/api/hvac/analyze', {
+      // Use streaming endpoint through the Next.js proxy. We request
+      // SSE by setting Accept and adding ?stream=1 so the proxy forwards
+      // to the Python streaming endpoint.
+      setProgress(20);
+      const response = await fetch('/api/hvac/analyze?stream=1', {
         method: 'POST',
         body: formData,
         headers: {
-          'ngrok-skip-browser-warning': '69420'
+          'ngrok-skip-browser-warning': '69420',
+          Accept: 'text/event-stream',
         }
       });
-      setProgress(70);
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Analysis failed');
+      if (!response.ok || !response.body) {
+        // Fallback to non-streaming JSON path
+        const fallback = await response.json().catch(() => null);
+        throw new Error(fallback?.error || 'Analysis failed');
       }
 
-      const data = await response.json();
+      // Stream parser
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffered = '';
+
+      setProgress(30);
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffered += decoder.decode(value, { stream: true });
+
+        // SSE events are separated by double-newline
+        const parts = buffered.split('\n\n');
+        buffered = parts.pop() || '';
+
+        for (const part of parts) {
+          if (!part.trim()) continue;
+          // Find the data: line(s)
+          const lines = part.split('\n').map(l => l.trim()).filter(Boolean);
+          const dataLine = lines.find(l => l.startsWith('data:'));
+          if (!dataLine) continue;
+          const jsonStr = dataLine.replace(/^data:\s?/, '');
+          try {
+            const obj = JSON.parse(jsonStr);
+            if (obj.type === 'progress') {
+              if (typeof obj.percent === 'number') setProgress(obj.percent);
+            } else if (obj.type === 'status') {
+              // Optionally surface status messages in the UI/logs
+              // setProgress(Math.max(progress, 5));
+            } else if (obj.type === 'result') {
+              const finalRaw = obj.result as AnalysisResult;
+              const final = normalizeAnalysisResult(finalRaw);
+              setResult(final);
+              setProgress(100);
+              if (onAnalysisComplete) onAnalysisComplete(final);
+            } else if (obj.type === 'error') {
+              setError(obj.message || 'Analysis error');
+            }
+          } catch (e) {
+            console.error('Failed to parse SSE payload', e, jsonStr);
+          }
+        }
+      }
+
+      // Ensure reading complete
       setProgress(100);
-      setResult(data);
-      
-      if (onAnalysisComplete) {
-        onAnalysisComplete(data);
-      }
     } catch (err: unknown) {
       if (err instanceof Error) {
         setError(err.message || 'Failed to analyze blueprint');
@@ -126,6 +169,32 @@ export default function HVACBlueprintUploader({ onAnalysisComplete }: HVACBluepr
       : (typeof r.processing_time_ms === 'number' ? r.processing_time_ms / 1000 : undefined);
     return (typeof secs === 'number') ? secs.toFixed(decimals) : (0).toFixed(decimals);
   };
+
+  // Normalize analysis result to prefer polygon masks for display when available.
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  const normalizeAnalysisResult = (r: any): AnalysisResult => {
+    if (!r) return r;
+    const normalized = { ...r } as any;
+    if (Array.isArray(r.segments)) {
+      normalized.segments = r.segments.map((s: any) => {
+        const seg = { ...s } as any;
+        // Prefer polygon if available, otherwise rle or mask
+        if (seg.polygon) {
+          seg.displayFormat = 'polygon';
+          seg.displayMask = seg.polygon;
+        } else if (seg.rle || seg.mask) {
+          seg.displayFormat = 'rle';
+          seg.displayMask = seg.rle || seg.mask;
+        } else {
+          seg.displayFormat = 'bbox';
+          seg.displayMask = null;
+        }
+        return seg as Segment;
+      });
+    }
+    return normalized as AnalysisResult;
+  };
+  /* eslint-enable @typescript-eslint/no-explicit-any */
 
   // Small sub-component to handle safe navigation to the analysis details page
   function ViewResultsButton({ result }: { result: AnalysisResult }) {

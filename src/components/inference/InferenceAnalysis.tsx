@@ -1,13 +1,14 @@
 'use client';
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import type { RLEMask, Segment, CountResult } from '@/types/analysis';
+import type { Segment, CountResult } from '@/types/analysis';
 import { useDropzone } from 'react-dropzone';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Separator } from '@/components/ui/separator';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 import {
   Upload,
   Scan,
@@ -16,57 +17,58 @@ import {
   CheckCircle2,
   AlertCircle,
   X,
-  MousePointerClick,
   FileBarChart,
+  Eye,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { drawMaskOnCanvas } from '@/lib/mask-utils';
 
-// --- Type Definitions ---
-type AnalysisState = 'idle' | 'segmenting' | 'counting';
-
-// --- API Configuration ---
+// --- Types ---
+type AnalysisState = 'idle' | 'analyzing';
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || '';
 
-export default function InferenceAnalysis({
-  initialImage,
-  initialSegments,
-  initialCount
-}: {
-  initialImage?: File | null;
-  initialSegments?: Segment[];
-  initialCount?: CountResult | null;
-}) {
-  // --- State Management ---
+// --- Color Palette for Classes ---
+const CLASS_COLORS: Record<string, string> = {
+  valve: '#ef4444', // Red
+  instrument: '#3b82f6', // Blue
+  sensor: '#10b981', // Emerald
+  duct: '#f59e0b', // Amber
+  default: '#8b5cf6', // Violet
+};
+
+function getColorForLabel(label: string) {
+  const lower = label.toLowerCase();
+  if (lower.includes('valve')) return CLASS_COLORS.valve;
+  if (lower.includes('instrument') || lower.includes('computer') || lower.includes('plc')) return CLASS_COLORS.instrument;
+  if (lower.includes('sensor')) return CLASS_COLORS.sensor;
+  if (lower.includes('duct')) return CLASS_COLORS.duct;
+  return CLASS_COLORS.default;
+}
+
+export default function SAMAnalysis() {
+  // --- State ---
   const [uploadedImage, setUploadedImage] = useState<File | null>(null);
   const [analysisState, setAnalysisState] = useState<AnalysisState>('idle');
-  const [error, setError] = useState<string | null>(null);
   const [segments, setSegments] = useState<Segment[]>([]);
   const [countResult, setCountResult] = useState<CountResult | null>(null);
-  const [clickMode, setClickMode] = useState(false);
-  const [apiHealthy, setApiHealthy] = useState<boolean | null>(null);
-  const [apiError, setApiError] = useState<string | null>(null);
+  
+  // Visualization Options
+  const [showLabels, setShowLabels] = useState(true);
+  const [showFill, setShowFill] = useState(true);
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  // Initialize as null so this module does not access browser globals during SSR
   const imageRef = useRef<HTMLImageElement | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
-  // Ensure we have an Image object on the client (avoid using DOM APIs during SSR)
+  // --- 1. Image Initialization ---
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    if (!imageRef.current) {
-      const img = new Image();
-      // allow cross-origin if images served remotely
-      try { img.crossOrigin = 'anonymous'; } catch (e) { /* ignore */ }
-      imageRef.current = img;
-    }
-    return () => {
-      // cleanup: dereference to help GC
-      imageRef.current = null;
-    };
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    imageRef.current = img;
   }, []);
 
-  // --- Core Drawing Logic ---
+  // --- 2. The Vector Drawing Engine ---
   const drawCanvasContent = useCallback(() => {
     const canvas = canvasRef.current;
     const img = imageRef.current;
@@ -75,593 +77,325 @@ export default function InferenceAnalysis({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // 1. Draw the base image onto the canvas
+    // A. Draw Base Image
+    // We render at natural resolution for sharpness, CSS handles display size
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.drawImage(img as CanvasImageSource, 0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-    // 2. Draw all segment masks and labels on top
+    // B. Draw Segments
     segments.forEach((segment, index) => {
-      try {
-        const colors: [number, number, number][] = [
-          [0, 255, 0], [255, 0, 0], [0, 0, 255], [255, 255, 0], [255, 0, 255], [0, 255, 255]
-        ];
-        const color = colors[index % colors.length];
+      const isHovered = index === hoveredIndex;
+      const baseColor = getColorForLabel(segment.label);
+      
+      // If we have vector polygon data (Preferred)
+      if (segment.polygon && segment.polygon.length > 0) {
+        // Normalize polygon shape: support both [ [x,y], ... ] and [ [[x,y], ...], [[x,y], ...] ]
+        let poly2d: number[][] | null = null;
+        try {
+          const first = segment.polygon[0];
 
-        // Prefer polygon/vector masks when provided (highest fidelity for the frontend)
-        /* eslint-disable @typescript-eslint/no-explicit-any */
-        const segAny = segment as any;
-        const displayFormat = segAny.displayFormat || null;
-        const displayMask = segAny.displayMask ?? null;
+          const isPoint = (p: unknown): p is number[] => {
+            return Array.isArray(p) && typeof (p as unknown[])[0] === 'number';
+          };
 
-        if (displayFormat === 'polygon' || segAny.polygon) {
-          // Normalize polygon(s) into an array of polygon arrays: [[x,y], ...] or [[...],[...]]
-          let polys: number[][][] = [];
-          const polySource = (segAny.polygon || displayMask) as any;
-          try {
-            const arr = Array.isArray(polySource) ? polySource : [];
-            if (arr.length === 0) polys = [];
-            else if (Array.isArray(arr[0]) && Array.isArray(arr[0][0])) {
-              // Already list of polygons
-              polys = arr as number[][][];
-            } else {
-              // single polygon
-              polys = [arr as number[][]];
-            }
-          } catch (e) {
-            polys = [];
+          const isPolyOfPolys = (p: unknown): p is number[][][] => {
+            return Array.isArray(p) && Array.isArray((p as unknown[])[0]) && Array.isArray(((p as unknown[])[0] as unknown[])[0]);
+          };
+
+          if (isPoint(first)) {
+            poly2d = segment.polygon as number[][];
+          } else if (isPolyOfPolys(segment.polygon)) {
+            poly2d = (segment.polygon as number[][][])[0];
           }
-
-          if (polys.length > 0) {
-            ctx.save();
-            ctx.fillStyle = `rgba(${[0,255,0][0]}, ${[0,255,0][1]}, ${[0,255,0][2]}, 0.35)`;
-            // Use color per segment like original code
-            const colors: [number, number, number][] = [
-              [0, 255, 0], [255, 0, 0], [0, 0, 255], [255, 255, 0], [255, 0, 255], [0, 255, 255]
-            ];
-            const color = colors[index % colors.length];
-            ctx.fillStyle = `rgba(${color[0]}, ${color[1]}, ${color[2]}, 0.35)`;
-            ctx.strokeStyle = `rgb(${color.join(',')})`;
-            ctx.lineWidth = 2;
-
-            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-
-            for (const p of polys) {
-              if (!Array.isArray(p) || p.length === 0) continue;
-              ctx.beginPath();
-              for (let vi = 0; vi < p.length; vi++) {
-                const [px, py] = p[vi];
-                if (vi === 0) ctx.moveTo(px, py);
-                else ctx.lineTo(px, py);
-                if (px < minX) minX = px;
-                if (py < minY) minY = py;
-                if (px > maxX) maxX = px;
-                if (py > maxY) maxY = py;
-              }
-              ctx.closePath();
-              ctx.fill();
-              ctx.stroke();
-            }
-
-            // Draw label near the polygon bounding box
-            const labelText = `${segment.label} (${(segment.score * 100).toFixed(1)}%)`;
-            const fontSize = Math.max(10, 14);
-            ctx.font = `${fontSize}px Arial`;
-            const labelWidth = ctx.measureText(labelText).width + 10;
-            const labelHeight = fontSize + 8;
-            const labelX = Math.max(0, isFinite(minX) ? minX : 0);
-            const labelY = Math.max(labelHeight, isFinite(minY) ? minY : labelHeight);
-
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-            ctx.fillRect(labelX, labelY - labelHeight, labelWidth, labelHeight);
-            ctx.fillStyle = 'white';
-            ctx.fillText(labelText, labelX + 5, labelY - (labelHeight - fontSize) / 2 - 2);
-
-            ctx.restore();
-            return; // drawn polygon, skip other mask paths
-          }
+        } catch (e) {
+          poly2d = null;
         }
 
-        // If the backend provided a PNG (base64) for the mask, prefer that for robust rendering
-        if (segment.mask_png) {
-          const maskImg = new Image();
-          try { maskImg.crossOrigin = 'anonymous'; } catch (e) { /* ignore */ }
-          maskImg.src = `data:image/png;base64,${segment.mask_png}`;
-
-          // If the image hasn't loaded yet, request a redraw once it is available
-          if (!maskImg.complete) {
-            maskImg.onload = () => requestAnimationFrame(drawCanvasContent);
-            maskImg.onerror = () => console.warn('Failed to load mask image for segment', segment.label);
-            return;
+        if (poly2d && poly2d.length > 0) {
+          ctx.beginPath();
+          // Move to first point
+          ctx.moveTo(poly2d[0][0] as number, poly2d[0][1] as number);
+          // Draw lines to subsequent points
+          for (let i = 1; i < poly2d.length; i++) {
+            ctx.lineTo(poly2d[i][0] as number, poly2d[i][1] as number);
           }
-
-          const maskWidth = maskImg.naturalWidth || maskImg.width;
-          const maskHeight = maskImg.naturalHeight || maskImg.height;
-          if (!maskWidth || !maskHeight) return;
-
-          const off = document.createElement('canvas');
-          off.width = maskWidth;
-          off.height = maskHeight;
-          const offCtx = off.getContext('2d');
-          if (!offCtx) return;
-
-          // Draw mask image then tint using source-in composite
-          offCtx.clearRect(0, 0, off.width, off.height);
-          offCtx.drawImage(maskImg, 0, 0);
-          offCtx.globalCompositeOperation = 'source-in';
-          offCtx.fillStyle = `rgba(${color[0]}, ${color[1]}, ${color[2]}, 0.45)`;
-          offCtx.fillRect(0, 0, off.width, off.height);
-          offCtx.globalCompositeOperation = 'source-over';
-
-          // Draw the tinted offscreen mask onto the visible canvas, scaling to fit
-          ctx.drawImage(off, 0, 0, canvas.width, canvas.height);
-
-          // Draw bbox scaled from mask-space to canvas-space
-          const [bx, by, bw, bh] = segment.bbox;
-          const scaleX = canvas.width / maskWidth;
-          const scaleY = canvas.height / maskHeight;
-          const sx = bx * scaleX;
-          const sy = by * scaleY;
-          const sw = bw * scaleX;
-          const sh = bh * scaleY;
-
-          ctx.strokeStyle = `rgb(${color.join(',')})`;
-          ctx.lineWidth = Math.max(1, 2 * ((scaleX + scaleY) / 2));
-          ctx.strokeRect(sx, sy, sw, sh);
-
-          const labelText = `${segment.label} (${(segment.score * 100).toFixed(1)}%)`;
-          const fontSize = Math.max(10, Math.round(14 * ((scaleX + scaleY) / 2)));
-          ctx.font = `${fontSize}px Arial`;
-          const textMetrics = ctx.measureText(labelText);
-          const labelWidth = textMetrics.width + 10;
-          const labelHeight = fontSize + 8;
-          const labelX = Math.max(0, sx);
-          const labelY = Math.max(labelHeight, sy);
-
-          ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-          ctx.fillRect(labelX, labelY - labelHeight, labelWidth, labelHeight);
-
-          ctx.fillStyle = 'white';
-          ctx.fillText(labelText, labelX + 5, labelY - (labelHeight - fontSize) / 2 - 2);
-        } else {
-          // Fallback: neither polygon nor mask_png provided — draw bbox and label only
-          /* eslint-enable @typescript-eslint/no-explicit-any */
-          const [bx, by, bw, bh] = segment.bbox;
-          const sx = bx;
-          const sy = by;
-          const sw = bw;
-          const sh = bh;
-
-          ctx.strokeStyle = `rgb(${color.join(',')})`;
-          ctx.lineWidth = 2;
-          ctx.strokeRect(sx, sy, sw, sh);
-
-          const labelText = `${segment.label} (${(segment.score * 100).toFixed(1)}%)`;
-          const fontSize = Math.max(10, 14);
-          ctx.font = `${fontSize}px Arial`;
-          const textMetrics = ctx.measureText(labelText);
-          const labelWidth = textMetrics.width + 10;
-          const labelHeight = fontSize + 8;
-          const labelX = Math.max(0, sx);
-          const labelY = Math.max(labelHeight, sy);
-
-          ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-          ctx.fillRect(labelX, labelY - labelHeight, labelWidth, labelHeight);
-
-          ctx.fillStyle = 'white';
-          ctx.fillText(labelText, labelX + 5, labelY - (labelHeight - fontSize) / 2 - 2);
+          ctx.closePath();
         }
-      } catch (e) {
-        console.error('Failed to draw segment:', segment.label, e);
+
+        // 1. Stroke (Outline)
+        ctx.strokeStyle = baseColor;
+        ctx.lineWidth = isHovered ? 4 : 2; // Thicker on hover
+        ctx.stroke();
+
+        // 2. Fill (Subtle)
+        if (showFill || isHovered) {
+          ctx.fillStyle = baseColor;
+          // Very transparent normally (0.1), slightly more on hover (0.3)
+          ctx.globalAlpha = isHovered ? 0.3 : 0.1; 
+          ctx.fill();
+          ctx.globalAlpha = 1.0; // Reset
+        }
+      } 
+      // Fallback for BBox only if no polygon
+      else {
+        const [x, y, x2, y2] = segment.bbox;
+        const w = x2 - x;
+        const h = y2 - y;
+        
+        ctx.strokeStyle = baseColor;
+        ctx.lineWidth = isHovered ? 4 : 2;
+        ctx.strokeRect(x, y, w, h);
+      }
+
+      // C. Draw Labels (Optimized)
+      // Only draw if enabled globally OR if this specific item is hovered
+      if (showLabels || isHovered) {
+        const [x, y] = segment.bbox;
+        const labelText = `${segment.label} ${Math.round(segment.score * 100)}%`;
+        
+        ctx.font = isHovered ? 'bold 16px Inter, sans-serif' : '12px Inter, sans-serif';
+        const textMetrics = ctx.measureText(labelText);
+        
+        const pad = 4;
+        const textW = textMetrics.width + (pad * 2);
+        const textH = isHovered ? 24 : 18;
+
+        // Draw Label Background
+        ctx.fillStyle = isHovered ? baseColor : 'rgba(0,0,0,0.6)';
+        ctx.fillRect(x, y - textH, textW, textH);
+
+        // Draw Label Text
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(labelText, x + pad, y - 6);
       }
     });
-  }, [segments]);
+  }, [segments, hoveredIndex, showLabels, showFill]);
 
-  // --- Image Loading and Canvas Sizing ---
+  // --- 3. Interaction Handlers ---
+
+  // Handle Mouse Move for Hover Effects
+  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    // Calculate mouse position relative to actual image coordinates
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const mouseX = (e.clientX - rect.left) * scaleX;
+    const mouseY = (e.clientY - rect.top) * scaleY;
+
+    // Find the first segment containing the mouse
+    // We iterate backwards to find the "top-most" item visually
+    let foundIndex: number | null = null;
+    for (let i = segments.length - 1; i >= 0; i--) {
+      const [x1, y1, x2, y2] = segments[i].bbox;
+      if (mouseX >= x1 && mouseX <= x2 && mouseY >= y1 && mouseY <= y2) {
+        foundIndex = i;
+        break;
+      }
+    }
+
+    if (foundIndex !== hoveredIndex) {
+      setHoveredIndex(foundIndex);
+    }
+  }, [segments, hoveredIndex]);
+
+  // Handle Image Load
   useEffect(() => {
     const img = imageRef.current;
     const canvas = canvasRef.current;
-
     if (!img) return;
 
-    const handleImageLoad = () => {
+    const handleLoad = () => {
       if (canvas) {
         canvas.width = img.naturalWidth;
         canvas.height = img.naturalHeight;
-        requestAnimationFrame(drawCanvasContent);
+        drawCanvasContent();
       }
     };
-
-    img.addEventListener('load', handleImageLoad);
-
+    img.addEventListener('load', handleLoad);
+    
     if (uploadedImage) {
       const url = URL.createObjectURL(uploadedImage);
       img.src = url;
-      // Cleanup function
-      return () => {
-        URL.revokeObjectURL(url);
-        img.removeEventListener('load', handleImageLoad);
-      };
-    } else {
-      // If no uploaded image, clear the src if element exists
-      img.src = '';
-      if (canvas) {
-        const ctx = canvas.getContext('2d');
-        ctx?.clearRect(0, 0, canvas.width, canvas.height);
-      }
+      return () => { URL.revokeObjectURL(url); img.removeEventListener('load', handleLoad); };
     }
   }, [uploadedImage, drawCanvasContent]);
 
-  // Check API health on mount
-  useEffect(() => {
-    const checkApiHealth = async () => {
-      if (!API_BASE_URL) {
-        setApiHealthy(false);
-        setApiError('API URL not configured. Please set NEXT_PUBLIC_API_BASE_URL in your environment variables.');
-        toast.error('API URL not configured', {
-          description: 'Please configure NEXT_PUBLIC_API_BASE_URL in .env.local',
-          duration: 10000,
-        });
-        return;
-      }
-
-      try {
-        const response = await fetch(`${API_BASE_URL}/health`, {
-          method: 'GET',
-          signal: AbortSignal.timeout(5000), // 5 second timeout
-          headers: {
-            'ngrok-skip-browser-warning': '69420'
-          }
-        });
-
-        if (response.ok) {
-          const health = await response.json();
-            if (health.model_loaded) {
-            setApiHealthy(true);
-            setApiError(null);
-          } else {
-            setApiHealthy(false);
-              setApiError(health.error || 'Inference model not loaded on backend');
-              toast.warning('Backend service is running but inference model not loaded', {
-                description: health.error || 'Check backend logs for details',
-              duration: 10000,
-            });
-          }
-        } else {
-          setApiHealthy(false);
-          setApiError(`Backend returned status ${response.status}`);
-          toast.error('Backend health check failed', {
-            description: `Status: ${response.status}`,
-            duration: 10000,
-          });
-        }
-      } catch (err: unknown) {
-        setApiHealthy(false);
-        const message = err instanceof Error ? err.message : 'Failed to connect';
-        setApiError(`Cannot connect to backend: ${message}`);
-        toast.error('Cannot connect to backend', {
-          description: `Make sure the backend is running at ${API_BASE_URL}`,
-          duration: 10000,
-        });
-      }
-    };
-
-    checkApiHealth();
-  }, []);
-
-  // If parent provided initial props, initialize internal state on mount
-  useEffect(() => {
-    if (initialImage) {
-      setUploadedImage(initialImage);
-    }
-    if (initialSegments && initialSegments.length > 0) {
-      setSegments(initialSegments);
-    }
-    if (initialCount) {
-      setCountResult(initialCount);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Re-draw canvas whenever segments change
+  // Redraw when interaction state changes
   useEffect(() => {
     requestAnimationFrame(drawCanvasContent);
-  }, [segments, drawCanvasContent]);
+  }, [drawCanvasContent]);
 
-  // --- Event Handlers ---
-  const onDrop = useCallback((acceptedFiles: File[]) => {
-    if (acceptedFiles.length > 0) {
-      setUploadedImage(acceptedFiles[0]);
-      setSegments([]);
-      setCountResult(null);
-      setError(null);
-      setClickMode(false);
+
+  // --- 4. API Call ---
+  const handleAnalyze = async () => {
+    if (!uploadedImage) return;
+    setAnalysisState('analyzing');
+    setSegments([]);
+    setCountResult(null);
+
+    const formData = new FormData();
+    formData.append('image', uploadedImage);
+    // We set a balanced threshold of 0.50 as discussed
+    formData.append('conf_threshold', '0.50'); 
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/v1/analyze`, {
+        method: 'POST',
+        body: formData,
+      });
+      if (!res.ok) throw new Error('Analysis failed');
+      
+      const data = await res.json();
+      setSegments(data.segments);
+      setCountResult(data);
+      toast.success(`Found ${data.total_objects_found} components`);
+    } catch (e) {
+      toast.error('Failed to analyze image');
+      console.error(e);
+    } finally {
+      setAnalysisState('idle');
     }
+  };
+
+  const handleDrop = useCallback((files: File[]) => {
+    if (files.length > 0) setUploadedImage(files[0]);
   }, []);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    onDrop,
+    onDrop: handleDrop,
     accept: { 'image/*': ['.png', '.jpg', '.jpeg'] },
-    maxFiles: 1,
-    multiple: false,
+    multiple: false
   });
 
-  const handleCanvasClick = useCallback(async (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!clickMode || !uploadedImage || !canvasRef.current || analysisState !== 'idle') return;
-
-    // Check API health before attempting request
-    if (apiHealthy === false) {
-      toast.error('Backend service unavailable', {
-        description: apiError || 'Please check that the backend is running and configured correctly',
-      });
-      return;
-    }
-
-    const canvas = canvasRef.current;
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-    const point = {
-      x: Math.round((e.clientX - rect.left) * scaleX),
-      y: Math.round((e.clientY - rect.top) * scaleY),
-    };
-
-    setAnalysisState('segmenting');
-    setError(null);
-
-    try {
-      if (!API_BASE_URL) throw new Error('API URL not configured. Please set NEXT_PUBLIC_API_BASE_URL.');
-
-      const formData = new FormData();
-      formData.append('image', uploadedImage);
-      formData.append('coords', `${point.x},${point.y}`);
-
-  const response = await fetch(`${API_BASE_URL}/api/analyze`, { method: 'POST', body: formData, headers: { 'ngrok-skip-browser-warning': '69420' } });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        const errorMessage = typeof errorData.detail === 'object' 
-          ? errorData.detail.error || JSON.stringify(errorData.detail)
-          : errorData.detail || errorData.error || 'Segmentation request failed';
-        throw new Error(errorMessage);
-      }
-
-      const data = await response.json();
-      if (data.segments && data.segments.length > 0) {
-        // coerce to Segment[]
-        setSegments(prev => [...prev, ...data.segments as Segment[]]);
-        toast.success(`Segmented: ${data.segments[0].label}`);
-      } else {
-        toast.info('No object found at this location.');
-      }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      setError(message);
-      toast.error('Segmentation failed', { description: message });
-    } finally {
-      setAnalysisState('idle');
-    }
-  }, [clickMode, uploadedImage, analysisState, apiHealthy, apiError]);
-
-  const handleCountAll = useCallback(async () => {
-    if (!uploadedImage || analysisState !== 'idle') return;
-
-    // Check API health before attempting request
-    if (apiHealthy === false) {
-      toast.error('Backend service unavailable', {
-        description: apiError || 'Please check that the backend is running and configured correctly',
-      });
-      return;
-    }
-
-    setAnalysisState('counting');
-    setError(null);
-    setCountResult(null);
-
-    let toastId: string | number | undefined;
-
-    try {
-      if (!API_BASE_URL) throw new Error('API URL not configured. Please set NEXT_PUBLIC_API_BASE_URL.');
-      
-      const formData = new FormData();
-      formData.append('image', uploadedImage);
-
-      toastId = toast.loading('Analyzing and counting all components...', { duration: Infinity });
-
-  const response = await fetch(`${API_BASE_URL}/api/count`, { method: 'POST', body: formData, headers: { 'ngrok-skip-browser-warning': '69420' } });
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        const errorMessage = typeof errorData.detail === 'object' 
-          ? errorData.detail.error || JSON.stringify(errorData.detail)
-          : errorData.detail || errorData.error || 'Counting request failed';
-        throw new Error(errorMessage);
-      }
-
-      const data = await response.json();
-      setCountResult(data as CountResult);
-      toast.success(`Analysis complete. Found ${data.total_objects_found} objects.`, { id: toastId });
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      setError(message);
-      toast.error('Analysis failed', { description: message, id: toastId, duration: 5000 });
-    } finally {
-      setAnalysisState('idle');
-    }
-  }, [uploadedImage, analysisState, apiHealthy, apiError]);
-
-  const handleClear = () => {
-    setSegments([]);
-    setCountResult(null);
-    setError(null);
-  };
-  
-  const exportToCSV = useCallback(() => {
-    if (!countResult) return;
-
-    const csvContent = [
-      ['Component Type', 'Count'],
-      ...Object.entries(countResult.counts_by_category).map(([label, count]) => [label, count.toString()])
-    ].map(row => row.join(',')).join('\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'component-counts.csv';
-    a.click();
-    URL.revokeObjectURL(url);
-  }, [countResult]);
-
-  const isBusy = analysisState !== 'idle';
-
+  // --- Render ---
   return (
     <div className="container mx-auto py-8 space-y-6">
-      {/* API Configuration Warning */}
-      {apiHealthy === false && (
-        <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
-          <AlertDescription>
-            <strong>Backend Service Issue:</strong> {apiError || 'Cannot connect to backend'}
-            <div className="mt-2 text-sm">
-              <strong>Quick troubleshooting:</strong>
-              <ul className="list-disc list-inside mt-1">
-                <li>Ensure the backend server is running at {API_BASE_URL || '(not configured)'}</li>
-                <li>Check that NEXT_PUBLIC_API_BASE_URL is set in .env.local</li>
-                <li>Verify the inference model (YOLO) is loaded (check backend logs)</li>
-                <li>Visit {API_BASE_URL}/health for detailed status</li>
-              </ul>
-            </div>
-          </AlertDescription>
-        </Alert>
-      )}
-
+      
+      {/* Upload Area */}
       <Card>
         <CardHeader>
-            <CardTitle className="flex items-center gap-2"><Upload className="h-5 w-5" />Upload Diagram</CardTitle>
-            <CardDescription>Upload a P&ID or HVAC diagram for analysis</CardDescription>
+          <CardTitle>HVAC Blueprint Analysis</CardTitle>
+          <CardDescription>Upload a P&ID or Floor Plan to detect symbols</CardDescription>
         </CardHeader>
         <CardContent>
           {!uploadedImage ? (
-             <div {...getRootProps()} className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${isDragActive ? 'border-primary bg-primary/5' : 'border-gray-300 hover:border-primary'}`}>
-                <input {...getInputProps()} />
-                <Upload className="h-12 w-12 mx-auto mb-4 text-gray-400" />
-                <p className="text-lg font-medium mb-2">Drag & drop a diagram, or click to select</p>
-                <p className="text-sm text-gray-500">Supports PNG, JPG, JPEG</p>
+            <div {...getRootProps()} className={`border-2 border-dashed rounded-xl p-12 text-center cursor-pointer transition-all ${isDragActive ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-blue-200'}`}>
+              <input {...getInputProps()} />
+              <Upload className="h-12 w-12 mx-auto text-gray-400 mb-4" />
+              <p className="text-lg font-medium text-gray-700">Drop blueprint here</p>
+              <p className="text-sm text-gray-500">Supports PNG, JPG (High Res recommended)</p>
             </div>
           ) : (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between border rounded-lg p-4 bg-gray-50">
-                <div className="flex items-center gap-3">
-                  <CheckCircle2 className="h-5 w-5 text-green-500" />
-                  <span className="font-medium">{uploadedImage.name}</span>
+            <div className="flex items-center justify-between bg-slate-50 p-4 rounded-lg border">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 bg-blue-100 rounded flex items-center justify-center text-blue-600">
+                  <Scan className="h-5 w-5" />
                 </div>
-                <Button variant="ghost" size="sm" onClick={() => setUploadedImage(null)} disabled={isBusy}><X className="h-4 w-4" /></Button>
+                <div>
+                  <p className="font-medium text-slate-900">{uploadedImage.name}</p>
+                  <p className="text-xs text-slate-500">{(uploadedImage.size / 1024 / 1024).toFixed(2)} MB</p>
+                </div>
               </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Button onClick={() => setClickMode(!clickMode)} variant={clickMode ? 'default' : 'outline'} disabled={isBusy}>
-                  <MousePointerClick className="mr-2 h-4 w-4" />
-                  {clickMode ? 'Click to Segment (Active)' : 'Enable Click-to-Segment'}
+              <div className="flex gap-2">
+                <Button onClick={handleAnalyze} disabled={analysisState === 'analyzing'}>
+                  {analysisState === 'analyzing' ? <Loader2 className="animate-spin mr-2 h-4 w-4" /> : <Scan className="mr-2 h-4 w-4" />}
+                  Analyze Diagram
                 </Button>
-                <Button onClick={handleCountAll} disabled={isBusy}>
-                  {analysisState === 'counting' ? (<><Loader2 className="mr-2 h-4 w-4 animate-spin" />Analyzing...</>) : (<><Scan className="mr-2 h-4 w-4" />Analyze & Count All</>) }
+                <Button variant="ghost" size="icon" onClick={() => { setUploadedImage(null); setSegments([]); setCountResult(null); }}>
+                  <X className="h-4 w-4" />
                 </Button>
               </div>
-              
-              {(segments.length > 0 || countResult) && (
-                <Button onClick={handleClear} variant="outline" size="sm" disabled={isBusy} className="w-full">
-                  <X className="mr-2 h-4 w-4" />Clear Results
-                </Button>
-              )}
             </div>
-          )}
-
-          {error && (
-            <Alert variant="destructive"><AlertCircle className="h-4 w-4" /><AlertDescription>{error}</AlertDescription></Alert>
           )}
         </CardContent>
       </Card>
 
+      {/* Visualization Canvas */}
       {uploadedImage && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Interactive Canvas</CardTitle>
-            <CardDescription>
-              {clickMode ? 'Click on any component to segment it' : 'Enable click-to-segment mode to interact'}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col items-center">
-            <canvas
-              ref={canvasRef}
-              onClick={handleCanvasClick}
-              className={clickMode && !isBusy ? 'cursor-crosshair' : 'cursor-default'}
-            />
-            {analysisState === 'segmenting' && (
-              <div className="mt-4 w-full text-center">
-                <p className="text-sm text-gray-600 mt-2 flex items-center justify-center">
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Segmenting component...
-                </p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* --- Results Cards (Segments & Count Report) --- */}
-      {/* These sections are well-structured and can remain as they are. */}
-      {/* I've included them here for completeness. */}
-      {segments.length > 0 && (
-        <Card>
-          <CardHeader><CardTitle>Segmentation Results</CardTitle></CardHeader>
-          <CardContent className="space-y-2">
-            {segments.map((segment, idx) => (
-              <div key={idx} className="flex items-center justify-between p-3 border rounded">
-                <div>
-                  <span className="font-medium">{segment.label}</span>
-                  <Badge className="ml-2" variant="secondary">
-                    {(segment.score * 100).toFixed(1)}%
-                  </Badge>
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          
+          {/* Main Canvas Area */}
+          <Card className="lg:col-span-3 overflow-hidden">
+            <CardHeader className="flex flex-row items-center justify-between py-4">
+              <CardTitle className="text-base">Visual Inspection</CardTitle>
+              
+              {/* Visualization Controls */}
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <Switch id="show-labels" checked={showLabels} onCheckedChange={setShowLabels} />
+                  <Label htmlFor="show-labels" className="text-sm cursor-pointer">Labels</Label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Switch id="show-fill" checked={showFill} onCheckedChange={setShowFill} />
+                  <Label htmlFor="show-fill" className="text-sm cursor-pointer">Fill</Label>
                 </div>
               </div>
-            ))}
-          </CardContent>
-        </Card>
-      )}
+            </CardHeader>
+            
+            <CardContent className="p-0 bg-slate-900 relative min-h-[500px] flex items-center justify-center overflow-auto">
+              <canvas 
+                ref={canvasRef}
+                onMouseMove={handleMouseMove}
+                onMouseLeave={() => setHoveredIndex(null)}
+                className="max-w-full h-auto shadow-2xl"
+                style={{ cursor: hoveredIndex !== null ? 'pointer' : 'default' }}
+              />
+              {/* Hover Tooltip Overlay */}
+              {hoveredIndex !== null && segments[hoveredIndex] && (
+                <div 
+                  className="absolute bottom-4 left-4 bg-black/80 backdrop-blur text-white p-3 rounded-lg shadow-xl border border-white/10 z-10"
+                >
+                  <p className="font-bold text-sm text-blue-400">{segments[hoveredIndex].label}</p>
+                  <p className="text-xs text-gray-300">Confidence: {(segments[hoveredIndex].score * 100).toFixed(1)}%</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
-      {countResult && (
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="flex items-center gap-2"><FileBarChart className="h-5 w-5" />Component Count Report</CardTitle>
-                <CardDescription>Total objects found: {countResult.total_objects_found}</CardDescription>
-              </div>
-              <Button onClick={exportToCSV} variant="outline"><Download className="mr-2 h-4 w-4" />Export CSV</Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-             <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="border-b"><tr>
-                      <th className="text-left py-2 px-4">Component Type</th>
-                      <th className="text-right py-2 px-4">Count</th>
-                      <th className="text-right py-2 px-4">Percentage</th>
-                  </tr></thead>
-                  <tbody>
-                    {Object.entries(countResult.counts_by_category).sort((a, b) => b[1] - a[1]).map(([label, count]) => (
-                        <tr key={label} className="border-b last:border-0">
-                          <td className="py-2 px-4">{label}</td>
-                          <td className="text-right py-2 px-4 font-medium">{count}</td>
-                          <td className="text-right py-2 px-4 text-sm text-gray-600">
-                            {((count / countResult.total_objects_found) * 100).toFixed(1)}%
-                          </td>
-                        </tr>
+          {/* Sidebar Stats */}
+          <Card className="lg:col-span-1 h-fit">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <FileBarChart className="h-4 w-4" /> Summary
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {countResult ? (
+                <div className="space-y-4">
+                  <div className="text-center p-4 bg-slate-50 rounded-lg border">
+                    <div className="text-3xl font-bold text-slate-900">{countResult.total_objects_found}</div>
+                    <div className="text-xs text-slate-500 uppercase tracking-wide font-semibold">Components Found</div>
+                  </div>
+                  
+                  <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2">
+                    {Object.entries(countResult.counts_by_category)
+                      .sort(([,a], [,b]) => b - a)
+                      .map(([label, count]) => (
+                      <div key={label} className="flex items-center justify-between text-sm p-2 hover:bg-slate-50 rounded group">
+                        <span className="truncate max-w-[140px] text-slate-700" title={label}>{label}</span>
+                        <Badge variant="secondary" className="group-hover:bg-blue-100 group-hover:text-blue-700 transition-colors">
+                          {count}
+                        </Badge>
+                      </div>
                     ))}
-                  </tbody>
-                </table>
-              </div>
-          </CardContent>
-        </Card>
+                  </div>
+                  
+                  <Button variant="outline" className="w-full text-xs" onClick={() => toast.info("Export feature coming soon")}>
+                    <Download className="mr-2 h-3 w-3" /> Export CSV
+                  </Button>
+                </div>
+              ) : (
+                <div className="text-center py-12 text-gray-400 text-sm">
+                  Run analysis to see component breakdown
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+        </div>
       )}
     </div>
   );

@@ -1,24 +1,18 @@
 """
 Lightweight YOLO inference wrapper used by the hvac-analysis service.
 
-This file provides a small `YOLOInferenceEngine` class that calls an underlying
+This file provides a optimized `YOLOInferenceEngine` class that calls an underlying
 YOLO model (Ultralytics-style) and returns a JSON-serializable result dict.
 
-Notes:
-- The module intentionally uses minimal external dependencies here and keeps
-  the RLE/mask conversion as a helper stub (the service can expand it if
-  full RLE encoding is required).
 """
 
-from typing import Any, Dict, Optional, Callable
+from typing import Any, Dict, Optional, Callable, List, Union
 import time
 import logging
 import numpy as np
+import torch
 
 logger = logging.getLogger(__name__)
-
-# Note: RLE/pycocotools removed — this engine returns polygon coordinates only.
-
 
 class YOLOInferenceEngine:
     """Wraps a loaded Ultralytics/YOLO model instance.
@@ -31,16 +25,22 @@ class YOLOInferenceEngine:
     def __init__(self, model: Any):
         self.model = model
 
-    # RLE removed — polygon rasterization/encoding is no longer performed by the engine.
-    # The engine now returns polygon coordinates in `segments[].polygon` and leaves
-    # any pixel-level encoding (PNG) to a different service if required.
-
-    def predict(self, image: np.ndarray, conf_threshold: float = 0.50, progress_callback: Optional[Callable[[Dict[str, Any]], None]] = None) -> Dict[str, Any]:
+    def predict(
+        self,
+        image: np.ndarray,
+        conf_threshold: float = 0.50,
+        iou_threshold: float = 0.45,
+        scan_conf_threshold: float = 0.25,
+        progress_callback: Optional[Callable[[Dict[str, Any]], None]] = None
+    ) -> Dict[str, Any]:
         """Run inference and return a simple, serializable result dict.
 
         Args:
-            image: HxWxC RGB/ BGR image as numpy.ndarray.
-            conf_threshold: minimum confidence to keep a detection.
+            image: HxWxC RGB/BGR image as numpy.ndarray.
+            conf_threshold: Minimum confidence to keep a detection in final output.
+            iou_threshold: IOU threshold for NMS during inference.
+            scan_conf_threshold: Lower confidence threshold for initial scanning (allows filtering later).
+            progress_callback: Optional callback for progress updates.
 
         Returns:
             A dict with keys: total_objects_found, counts_by_category, segments,
@@ -57,83 +57,95 @@ class YOLOInferenceEngine:
             except Exception:
                 logger.debug("progress_callback failed at start", exc_info=True)
 
-        # Run inference: keep a lower internal conf to capture edge cases and
-        # perform the final filtering below using conf_threshold.
-        logger.info("🧠 [MODEL] Running YOLO inference (scan-conf=0.25, filter-conf=%s)", conf_threshold)
-        results = self.model.predict(
-            image,
-            conf=0.25,
-            iou=0.45,
-            retina_masks=True,
-            verbose=False,
-        )[0]
+        # Run inference
+        logger.info("🧠 [MODEL] Running YOLO inference (scan-conf=%s, filter-conf=%s)", scan_conf_threshold, conf_threshold)
+        try:
+            results = self.model.predict(
+                image,
+                conf=scan_conf_threshold,
+                iou=iou_threshold,
+                retina_masks=True,
+                verbose=False,
+            )[0]
+        except Exception as e:
+            logger.error(f"Inference failed: {e}")
+            raise RuntimeError(f"YOLO inference failed: {e}") from e
 
         processing_time_ms = (time.perf_counter() - start_time) * 1000
 
-        detections = []
-        class_counts = {}
+        detections: List[Dict[str, Any]] = []
+        class_counts: Dict[str, int] = {}
 
         skipped_huge = 0
         skipped_low_conf = 0
 
-        # Iterate over boxes in the Ultralytics results object.
-        total_boxes = len(results.boxes) if hasattr(results, 'boxes') else 0
+        # Check if results are valid
+        if not hasattr(results, 'boxes'):
+             logger.warning("No boxes attribute in results.")
+             return {
+                "total_objects_found": 0,
+                "counts_by_category": {},
+                "segments": [],
+                "processing_time_ms": processing_time_ms,
+            }
+
+        total_boxes = len(results.boxes)
+        
+        # Optimize: Extract all data at once if possible, but iterating is safer for mixed processing logic
+        # For very large numbers of boxes, vectorized operations would be better, but loop is fine for typical HVAC diagrams.
+
         for i, box in enumerate(results.boxes):
             try:
-                cls_id = int(box.cls[0])
+                # 1. Class and Confidence
+                cls_id = int(box.cls[0].item())
                 class_name = self.model.names[cls_id]
-                confidence = float(box.conf[0])
+                confidence = float(box.conf[0].item())
 
-                # Extract xyxy coordinates; fall back if API differs.
-                try:
-                    coords = box.xyxy[0].cpu().numpy().astype(int)
-                    x1, y1, x2, y2 = map(int, coords)
-                except Exception:
-                    # Fallback: treat box.xyxy as an array-like
-                    xy = np.array(box.xyxy).astype(int).flatten()
-                    x1, y1, x2, y2 = int(xy[0]), int(xy[1]), int(xy[2]), int(xy[3])
-
+                # 2. Bounding Box (xyxy)
+                # Ensure integer coordinates
+                coords = box.xyxy[0].cpu().numpy().astype(int)
+                x1, y1, x2, y2 = coords
+                
+                # 3. Filters
+                # Size Filter
                 box_area = max(0, (x2 - x1)) * max(0, (y2 - y1))
                 if image_area > 0 and (box_area / image_area) > 0.60:
                     skipped_huge += 1
                     continue
 
+                # Confidence Filter
                 if confidence < conf_threshold:
                     skipped_low_conf += 1
                     continue
 
-                polygon_coords = None
+                # 4. Polygon Extraction
+                polygon_coords: Optional[List[List[int]]] = None
                 if getattr(results, "masks", None) is not None:
+                    # results.masks.xy is a list of np arrays (normalized 0-1 if retina_masks=False, but pixel coords if True?)
+                    # Ultralytics docs say .xy returns pixel coordinates.
                     try:
+                        # Accessing .xy[i] gives pixel coordinates directly
                         poly = results.masks.xy[i]
-                        # Keep original polygon coordinates (list of [x,y] or list of polygons)
-                        try:
-                            arr = np.asarray(poly)
-                            if arr.ndim == 2:
-                                polygon_coords = arr.astype(int).tolist()
-                            elif arr.ndim == 3:
-                                polygon_coords = [p.astype(int).tolist() for p in arr]
-                            else:
-                                polygon_coords = np.asarray(poly).tolist()
-                        except Exception:
-                            # Fallback: attempt to coerce into python lists
-                            try:
-                                polygon_coords = [list(map(int, xy)) for xy in poly]
-                            except Exception:
-                                polygon_coords = None
-                    except Exception:
+                        
+                        # Convert to list of [x, y] integers
+                        if len(poly) > 0:
+                             polygon_coords = poly.astype(int).tolist()
+                    except Exception as e:
+                        logger.warning(f"Failed to extract polygon for box {i}: {e}")
                         polygon_coords = None
 
+                # 5. Aggregate
                 class_counts[class_name] = class_counts.get(class_name, 0) + 1
                 detections.append({
                     "id": i,
                     "label": class_name,
                     "score": confidence,
-                    "bbox": [x1, y1, x2, y2],
+                    "bbox": [int(x1), int(y1), int(x2), int(y2)],
                     "polygon": polygon_coords,
                 })
-                # Emit progress update after each accepted detection
-                if progress_callback:
+
+                # 6. Progress Update (Throttled)
+                if progress_callback and i % 5 == 0: # Update every 5 items to reduce overhead
                     try:
                         percent = int(((i + 1) / max(1, total_boxes)) * 80)
                         progress_callback({
@@ -144,9 +156,10 @@ class YOLOInferenceEngine:
                             "percent": percent,
                         })
                     except Exception:
-                        logger.debug("progress_callback failed during loop", exc_info=True)
-            except Exception:
-                logger.exception("Error processing detection %s", i)
+                        pass # Suppress callback errors during loop
+
+            except Exception as e:
+                logger.exception(f"Error processing detection {i}: {e}")
                 continue
 
         logger.info("🗑️ [FILTER] Removed %d 'Huge' boxes.", skipped_huge)
@@ -184,7 +197,7 @@ def create_yolo_engine(model_path: Optional[str] = None, device: Optional[str] =
     try:
         # Import lazily so module import doesn't fail if ultralytics isn't installed
         from ultralytics import YOLO as _YOLO
-    except Exception as e:
+    except ImportError as e:
         logger.error("ultralytics package not available: %s", e)
         raise
 
@@ -192,12 +205,13 @@ def create_yolo_engine(model_path: Optional[str] = None, device: Optional[str] =
         raise ValueError("model_path is required to create YOLO engine")
 
     logger.info("Loading YOLO model from %s", model_path)
-    model = _YOLO(model_path)
-    # If device selection was provided, attempt to set it (Ultralytics handles this via .to)
     try:
+        model = _YOLO(model_path)
+        # If device selection was provided, attempt to set it (Ultralytics handles this via .to)
         if device:
             model.to(device)
-    except Exception:
-        logger.debug("Failed to set device %s on model; continuing with default", device, exc_info=True)
+    except Exception as e:
+        logger.error(f"Failed to load model or set device: {e}")
+        raise
 
     return YOLOInferenceEngine(model)

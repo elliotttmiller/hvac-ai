@@ -102,7 +102,6 @@ class YOLOInferenceEngine:
                     skipped_low_conf += 1
                     continue
 
-                rle_mask = None
                 polygon_coords = None
                 if getattr(results, "masks", None) is not None:
                     try:
@@ -122,10 +121,7 @@ class YOLOInferenceEngine:
                                 polygon_coords = [list(map(int, xy)) for xy in poly]
                             except Exception:
                                 polygon_coords = None
-
-                        rle_mask = self._polygon_to_rle(poly, orig_h, orig_w)
                     except Exception:
-                        rle_mask = None
                         polygon_coords = None
 
                 class_counts[class_name] = class_counts.get(class_name, 0) + 1
@@ -134,8 +130,6 @@ class YOLOInferenceEngine:
                     "label": class_name,
                     "score": confidence,
                     "bbox": [x1, y1, x2, y2],
-                    "mask": rle_mask,
-                    "rle": rle_mask,
                     "polygon": polygon_coords,
                 })
                 # Emit progress update after each accepted detection
@@ -174,3 +168,36 @@ class YOLOInferenceEngine:
                 logger.debug("progress_callback failed at end", exc_info=True)
 
         return result
+
+
+def create_yolo_engine(model_path: Optional[str] = None, device: Optional[str] = None) -> YOLOInferenceEngine:
+    """Factory helper to create and return a YOLOInferenceEngine instance.
+
+    Args:
+        model_path: Path to the Ultralytics YOLO model weights (required).
+        device: Optional device string like 'cpu' or 'cuda:0'. If None the
+            underlying library decides.
+
+    Returns:
+        YOLOInferenceEngine wrapping the loaded model.
+    """
+    try:
+        # Import lazily so module import doesn't fail if ultralytics isn't installed
+        from ultralytics import YOLO as _YOLO
+    except Exception as e:
+        logger.error("ultralytics package not available: %s", e)
+        raise
+
+    if not model_path:
+        raise ValueError("model_path is required to create YOLO engine")
+
+    logger.info("Loading YOLO model from %s", model_path)
+    model = _YOLO(model_path)
+    # If device selection was provided, attempt to set it (Ultralytics handles this via .to)
+    try:
+        if device:
+            model.to(device)
+    except Exception:
+        logger.debug("Failed to set device %s on model; continuing with default", device, exc_info=True)
+
+    return YOLOInferenceEngine(model)

@@ -136,10 +136,10 @@ else
     print_status "ERROR" "Requirements file not found"
 fi
 
-if [ -f "python-services/core/ai/sam_inference.py" ]; then
-    print_status "OK" "SAM inference module exists"
+if [ -f "python-services/core/ai/yolo_inference.py" ] || [ -f "python-services/core/ai/sam_inference.py" ]; then
+    print_status "OK" "Inference module exists"
 else
-    print_status "ERROR" "SAM inference module not found"
+    print_status "ERROR" "Inference module not found"
 fi
 echo ""
 
@@ -195,4 +195,4 @@ echo ""
 echo "For help, see:"
 echo "  - docs/GETTING_STARTED.md"
 echo "  - docs/TROUBLESHOOTING.md"
-echo "  - docs/SAM_DEPLOYMENT.md"
+echo "  - docs/INFERENCE_DEPLOYMENT.md"

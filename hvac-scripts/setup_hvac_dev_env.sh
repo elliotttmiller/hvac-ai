@@ -118,7 +118,7 @@ echo "Validating HVAC-specific setup..."
 # Check for model directory
 if [ ! -d "models" ]; then
     mkdir -p models
-    print_info "Created models directory. Please download SAM model and place in models/"
+    print_info "Created models directory. Please download or copy your inference model (YOLO) into models/"
 fi
 
 # Check for HVAC datasets directory
@@ -142,7 +142,7 @@ print_success "HVAC-AI development environment is ready"
 echo ""
 echo "Next steps:"
 echo "1. Edit .env file with your configuration"
-echo "2. Download SAM model to models/ directory"
+echo "2. Download or copy your inference model (YOLO/Ultralytics) to the models/ directory"
 echo "3. Run 'npm run dev:all' to start development servers"
 echo ""
 echo "For more information, see docs/GETTING_STARTED.md"

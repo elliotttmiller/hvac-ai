@@ -28,7 +28,7 @@ class TestEndToEndAnalysis:
     
     @pytest.fixture
     def mock_sam_engine(self):
-        """Create a mock SAM engine for testing"""
+        """Create a mock legacy inference engine for testing"""
         engine = Mock()
         engine.device = "cpu"
         engine.count = Mock(return_value={
@@ -70,7 +70,7 @@ class TestEndToEndAnalysis:
         return image
     
     def test_complete_workflow_without_integration(self, mock_sam_engine, sample_blueprint):
-        """Test complete workflow using only mock SAM engine"""
+        """Test complete workflow using only mock legacy inference engine"""
         # This test works even without the new services
         result = mock_sam_engine.count(
             sample_blueprint,
@@ -231,7 +231,7 @@ class TestEndToEndAnalysis:
                 device="cpu"
             )
             
-            # Should still work with just legacy SAM
+            # Should still work with just legacy inference
             result = analyzer.analyze_blueprint(
                 image=sample_blueprint,
                 mode="legacy"

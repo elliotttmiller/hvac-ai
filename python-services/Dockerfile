@@ -1,4 +1,4 @@
-# SAM Inference Service - GPU-Enabled Dockerfile
+# Inference Service (YOLO/Ultralytics) - GPU-Enabled Dockerfile
 FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04
 
 # Set working directory
@@ -30,7 +30,7 @@ RUN mkdir -p /app/models
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
-ENV SAM_MODEL_PATH=/app/models/sam_hvac_finetuned.pth
+ENV MODEL_PATH=/app/models/<your_model_file>.pt
 ENV CUDA_VISIBLE_DEVICES=0
 
 # Expose port

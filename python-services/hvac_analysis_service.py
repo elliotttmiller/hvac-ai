@@ -66,7 +66,29 @@ app.add_middleware(
 # --- ENDPOINTS ---
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "model": "YOLO11-Seg"}
+    """Return service health and whether the inference engine is loaded.
+
+    Frontend expects a `model_loaded` boolean to determine whether it can
+    call analysis endpoints. This endpoint returns a small JSON payload
+    with status, model_loaded, and optional message for troubleshooting.
+    """
+    engine = ml_models.get("yolo_engine")
+    model_loaded = engine is not None
+    response = {"status": "healthy", "model_loaded": model_loaded}
+    if model_loaded:
+        try:
+            # Provide a compact model identifier if available
+            model_info = getattr(engine, 'model', None)
+            model_name = getattr(model_info, 'model', None) or getattr(model_info, 'weights', None) or None
+            if model_name:
+                response["model"] = str(model_name)
+        except Exception:
+            # best-effort only
+            pass
+    else:
+        response["message"] = "Inference engine not attached; check MODEL_PATH and server logs"
+
+    return response
 
 @app.post("/api/v1/analyze")
 async def analyze_blueprint(

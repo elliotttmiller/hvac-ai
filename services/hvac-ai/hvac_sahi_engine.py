@@ -76,7 +76,7 @@ class HVACSAHIPredictor:
     def __init__(
         self,
         model_path: str,
-        model_type: str = "sam",
+        model_type: str = "yolo",
         device: str = "cuda",
         config: Optional[HVACSAHIConfig] = None
     ):
@@ -84,8 +84,8 @@ class HVACSAHIPredictor:
         Initialize HVAC SAHI Predictor
         
         Args:
-            model_path: Path to the SAM model weights
-            model_type: Type of model to use (default: "sam")
+            model_path: Path to the inference model weights (YOLO/Ultralytics)
+            model_type: Type of model to use (default: "yolo")
             device: Device to run inference on ("cuda" or "cpu")
             config: HVAC-specific SAHI configuration
         """
@@ -331,7 +331,7 @@ def create_hvac_sahi_predictor(
     Factory function to create HVAC SAHI predictor with custom configuration
     
     Args:
-        model_path: Path to SAM model weights
+        model_path: Path to inference model weights (YOLO/Ultralytics)
         device: Device for inference
         **config_kwargs: Additional configuration parameters
         

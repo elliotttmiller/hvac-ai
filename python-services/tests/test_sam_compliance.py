@@ -1,6 +1,6 @@
 """
-Test suite for SAM Implementation Compliance
-Validates that the SAM implementation meets the specifications in SAM_UPGRADE_IMPLEMENTATION.md
+Test suite for Inference Implementation Compliance (YOLO/Ultralytics)
+Validates that the inference implementation meets the specifications in INFERENCE_UPGRADE_IMPLEMENTATION.md
 """
 
 import unittest
@@ -178,7 +178,10 @@ class TestHVACTaxonomy(unittest.TestCase):
     def test_taxonomy_count(self):
         """Verify taxonomy has expected number of categories"""
         # Import the taxonomy
-        from core.ai.sam_inference import HVAC_TAXONOMY
+        try:
+            from core.ai.yolo_inference import HVAC_TAXONOMY
+        except Exception:
+            from core.ai.sam_inference import HVAC_TAXONOMY
         
         # Documentation says 70, but implementation has 65
         # This test documents the actual count
@@ -186,7 +189,10 @@ class TestHVACTaxonomy(unittest.TestCase):
     
     def test_taxonomy_categories(self):
         """Verify taxonomy has components from all 4 major categories"""
-        from core.ai.sam_inference import HVAC_TAXONOMY
+        try:
+            from core.ai.yolo_inference import HVAC_TAXONOMY
+        except Exception:
+            from core.ai.sam_inference import HVAC_TAXONOMY
         
         # Check for presence of each category
         has_valve = any('Valve' in c or 'Actuator' in c for c in HVAC_TAXONOMY)
@@ -202,7 +208,10 @@ class TestHVACTaxonomy(unittest.TestCase):
     
     def test_taxonomy_unique_labels(self):
         """Verify all taxonomy labels are unique"""
-        from core.ai.sam_inference import HVAC_TAXONOMY
+        try:
+            from core.ai.yolo_inference import HVAC_TAXONOMY
+        except Exception:
+            from core.ai.sam_inference import HVAC_TAXONOMY
         
         unique_labels = set(HVAC_TAXONOMY)
         assert len(unique_labels) == len(HVAC_TAXONOMY), "All taxonomy labels should be unique"

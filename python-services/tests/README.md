@@ -1,12 +1,13 @@
-# SAM Implementation Compliance Tests
+# Inference Implementation Compliance Tests
 
-This directory contains test suites to validate that the SAM implementation meets the specifications in `docs/SAM_UPGRADE_IMPLEMENTATION.md`.
+This directory contains test suites to validate that the inference implementation (YOLO/Ultralytics) meets the specifications in `docs/INFERENCE_UPGRADE_IMPLEMENTATION.md`.
 
 ## Test Coverage
 
-### test_sam_compliance.py
-Validates core SAM functionality:
-- **RLE Encoding**: Tests COCO RLE format compliance
+### test_inference_compliance.py
+Validates core inference functionality (YOLO/Ultralytics):
+- **Polygon/Segmentation**: Tests polygon/segmentation mask output
+- **NMS Algorithm**: Tests Non-Maximum Suppression correctness
 - **NMS Algorithm**: Tests Non-Maximum Suppression correctness
 - **BBox Calculation**: Tests bounding box generation
 - **HVAC Taxonomy**: Validates 65-class taxonomy
@@ -24,12 +25,12 @@ pip install -r requirements.txt
 
 ### Run All Tests
 ```bash
-python tests/test_sam_compliance.py
+python tests/test_inference_compliance.py
 ```
 
 ### Run Specific Test Class
 ```bash
-python -m unittest tests.test_sam_compliance.TestRLEEncoding
+python -m unittest tests.test_inference_compliance.TestPolygonEncoding
 ```
 
 ### Run with Verbose Output
@@ -44,7 +45,7 @@ python tests/test_sam_compliance.py -v
 
 ## Known Issues
 
-Based on the SAM Implementation Audit (docs/SAM_IMPLEMENTATION_AUDIT.md), the following are known gaps:
+Based on the Inference Implementation Audit (docs/INFERENCE_IMPLEMENTATION_AUDIT.md), the following are known gaps:
 
 1. **Classification System (CRITICAL)**: Current implementation uses placeholder logic instead of the documented multi-stage geometric + visual pipeline
 2. **Cache Implementation**: Uses simple dictionary instead of true LRU cache
@@ -56,11 +57,11 @@ To integrate these tests into CI/CD:
 
 ```yaml
 # .github/workflows/test.yml
-- name: Run SAM Compliance Tests
+- name: Run Inference Compliance Tests
   run: |
     cd python-services
     source venv/bin/activate
-    python tests/test_sam_compliance.py
+    python tests/test_inference_compliance.py
 ```
 
 ## Adding New Tests
@@ -74,5 +75,5 @@ When adding new tests:
 
 ## References
 
-- [SAM_UPGRADE_IMPLEMENTATION.md](../../docs/SAM_UPGRADE_IMPLEMENTATION.md) - Specification
-- [SAM_IMPLEMENTATION_AUDIT.md](../../docs/SAM_IMPLEMENTATION_AUDIT.md) - Audit results
+- [INFERENCE_UPGRADE_IMPLEMENTATION.md](../../docs/INFERENCE_UPGRADE_IMPLEMENTATION.md) - Specification
+- [INFERENCE_IMPLEMENTATION_AUDIT.md](../../docs/INFERENCE_IMPLEMENTATION_AUDIT.md) - Audit results

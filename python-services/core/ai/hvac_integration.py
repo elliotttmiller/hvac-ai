@@ -80,7 +80,7 @@ except ImportError as e:
 
 class HVACIntegratedAnalyzer:
     """
-    Integrated HVAC analyzer that combines legacy SAM inference with new HVAC services.
+    Integrated HVAC analyzer that combines legacy inference (SAM/other) with new HVAC services.
     
     This adapter provides:
     - SAHI-based detection for large blueprints
@@ -88,7 +88,7 @@ class HVACIntegratedAnalyzer:
     - Prompt engineering for improved accuracy
     - Document quality assessment
     
-    Falls back gracefully to legacy SAM when new services unavailable.
+    Falls back gracefully to legacy inference (SAM) when new services unavailable.
     """
     
     def __init__(
@@ -104,8 +104,8 @@ class HVACIntegratedAnalyzer:
         Initialize integrated HVAC analyzer.
         
         Args:
-            sam_engine: Existing SAM inference engine
-            model_path: Path to SAM model weights
+            sam_engine: Existing legacy inference engine (SAM or other)
+            model_path: Path to legacy model weights (if using legacy engine)
             enable_sahi: Enable SAHI-based detection
             enable_validation: Enable system validation
             enable_prompts: Enable prompt engineering

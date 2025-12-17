@@ -159,7 +159,7 @@ export default function HVACBlueprintUploader({ onAnalysisComplete }: HVACBluepr
     setProgress(0);
   };
 
-  const SAMAnalysis = dynamic(() => import('@/components/sam/SAMAnalysis'), { ssr: false });
+  const InferenceAnalysis = dynamic(() => import('@/components/inference/InferenceAnalysis'), { ssr: false });
 
   // Helper to normalize processing time to seconds and format safely
   const formatProcessingTime = (r: AnalysisResult | null, decimals = 2) => {
@@ -304,7 +304,7 @@ export default function HVACBlueprintUploader({ onAnalysisComplete }: HVACBluepr
           <CardContent className="space-y-4">
             {/* Render SAMAnalysis inline so users can interact without navigation */}
             <div className="mb-4">
-              <SAMAnalysis
+              <InferenceAnalysis
                 initialImage={uploadedFile?.file ?? null}
                 initialSegments={result.segments ?? undefined}
                 initialCount={result.counts_by_category ? { total_objects_found: (result.total_components ?? result.total_objects_found ?? 0), counts_by_category: result.counts_by_category } : undefined}

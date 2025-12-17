@@ -8,7 +8,7 @@ This directory contains the backend AI services for the HVAC AI Platform.
 python-services/
 ├── core/                          # Core business logic
 │   ├── ai/                       # AI models and inference
-│   │   ├── sam_inference.py     # SAM model inference engine
+│   │   ├── yolo_inference.py    # YOLO/Ultralytics model inference engine
 │   │   └── detector.py          # HVAC component detection
 │   ├── document/                 # Document processing
 │   │   └── processor.py         # Blueprint/CAD processing
@@ -67,7 +67,7 @@ python-services/
 
 ## API Endpoints
 
-### Core Endpoints
+-### Core Endpoints
 
 - `GET /` - Service information
 - `GET /health` - Health check
@@ -75,7 +75,7 @@ python-services/
 
 ### AI Analysis
 
-- `POST /api/analyze` - Interactive SAM segmentation (RLE masks)
+- `POST /api/analyze` - Interactive inference segmentation (polygon masks, YOLO/Ultralytics)
 - `POST /api/count` - Automated component counting
 - `POST /api/v1/segment` - Legacy interactive segmentation (backward compatible)
 - `POST /api/v1/count` - Legacy counting endpoint
@@ -87,22 +87,22 @@ python-services/
 - `POST /api/analyze` - Analyze HVAC blueprint
 - `POST /api/estimate` - Generate cost estimate
 
-## Configuration
+### Configuration
 
 ### Environment Variables
 
-- `MODEL_PATH` - Path to SAM model file (required)
+- `MODEL_PATH` - Path to inference model file (YOLO/Ultralytics) (required)
 - `NGROK_AUTHTOKEN` - ngrok auth token for secure tunneling (required for development)
-- `SAM_MODEL_PATH` - Backward-compatible alias for `MODEL_PATH`
+- `SAM_MODEL_PATH` - Backward-compatible alias for `MODEL_PATH` (legacy)
 - `CUDA_VISIBLE_DEVICES` - GPU device ID (default: `0`)
 - `PORT` - Service port (default: `8000`)
 - `HOST` - Service host (default: `0.0.0.0`)
 
 ### Model Setup
 
-Place your trained SAM model at:
+Place your trained inference model at (YOLO/Ultralytics recommended):
 ```bash
-python-services/models/sam_hvac_finetuned.pth
+python-services/models/<your_model_file>.pt
 ```
 
 If no model is found, the service runs in mock mode for development.
@@ -111,9 +111,9 @@ If no model is found, the service runs in mock mode for development.
 
 ### AI Module (`core/ai/`)
 
-**SAM Inference Engine** (`sam_inference.py`)
-- Fine-tuned Segment Anything Model for HVAC/P&ID diagrams
-- Features: embedding caching, adaptive grid processing, multi-stage classification
+**YOLO Inference Engine** (`yolo_inference.py`)
+- YOLO/Ultralytics model for HVAC/P&ID diagrams
+- Features: adaptive slicing, polygon/segmentation support (model-dependent), multi-stage classification
 - Recognizes 70+ HVAC component types
 
 **Component Detector** (`detector.py`)
@@ -188,7 +188,7 @@ pytest
 
 ## Documentation
 
-See the main [documentation directory](../docs/) for:
-- [SAM Integration Guide](../docs/SAM_INTEGRATION_GUIDE.md)
+- See the main [documentation directory](../docs/) for:
+- [Inference Integration Guide](../docs/SAM_INTEGRATION_GUIDE.md)
 - [API Usage Examples](../docs/INFERENCE_USAGE_EXAMPLES.md)
 - [Deployment Guide](../docs/SAM_DEPLOYMENT.md)

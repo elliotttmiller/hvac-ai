@@ -45,7 +45,7 @@ cd python-services && python hvac_analysis_service.py  # Backend (port 8000)
 - [Getting Started](docs/GETTING_STARTED.md) - Setup and installation
 - **[HVAC Refactoring Guide](docs/HVAC_REFACTORING_GUIDE.md)** - New HVAC-specialized architecture
 - [Troubleshooting](docs/TROUBLESHOOTING.md) - Fix common issues with uploads and analysis
-- [SAM Deployment](docs/SAM_DEPLOYMENT.md) - Deploy SAM model features
+- [Inference Deployment (YOLO/Ultralytics)](docs/SAM_DEPLOYMENT.md) - Deploy inference model features
 - [API Documentation](http://localhost:8000/docs) - Interactive API docs (when backend is running)
 
 ### New Features Documentation
@@ -107,7 +107,7 @@ hvac-ai/
 **Backend:**
 - Python 3.10+
 - FastAPI
-- PyTorch & Segment Anything Model (SAM)
+- PyTorch & YOLO (Ultralytics)
 - OpenCV, Tesseract (OCR)
 
 ## Contributing

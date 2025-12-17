@@ -29,13 +29,13 @@ from services.hvac_domain.hvac_system_engine import (
 from services.hvac_ai.hvac_prompt_engineering import create_hvac_prompt_framework
 
 
-def analyze_hvac_blueprint(blueprint_path: str, model_path: str = "models/sam_hvac_finetuned.pth"):
+def analyze_hvac_blueprint(blueprint_path: str, model_path: str = "models/<your_model_file>.pt"):
     """
     Complete HVAC blueprint analysis workflow
     
     Args:
         blueprint_path: Path to HVAC blueprint file
-        model_path: Path to SAM model weights
+        model_path: Path to inference model weights (YOLO/Ultralytics)
     """
     
     print("=" * 60)

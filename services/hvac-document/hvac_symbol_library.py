@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 class HVACSymbolCategory(Enum):
     """
     Comprehensive HVAC symbol categories per ASHRAE Standard 134, SMACNA, and ISO 14617
-    Aligned with HVAC_TAXONOMY from SAM inference engine
+    Aligned with HVAC_TAXONOMY from the inference engine (YOLO/Ultralytics)
     """
     # Actuators (7 types)
     ACTUATOR_DIAPHRAGM = "actuator_diaphragm"

@@ -1,3 +1,3 @@
 """
-SAM Implementation Test Suite
+Inference Implementation Test Suite (YOLO/Ultralytics)
 """

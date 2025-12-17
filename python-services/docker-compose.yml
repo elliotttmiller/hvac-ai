@@ -1,18 +1,18 @@
 version: '3.8'
 
 services:
-  sam-inference-service:
+  inference-service:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: hvac-sam-inference
+    container_name: hvac-inference
     ports:
       - "8000:8000"
     volumes:
       - ./models:/app/models
       - ./logs:/app/logs
     environment:
-      - SAM_MODEL_PATH=/app/models/sam_hvac_finetuned.pth
+      - MODEL_PATH=/app/models/<your_model_file>.pt
       - CUDA_VISIBLE_DEVICES=0
     # GPU support - comment out the deploy section if running without GPU
     deploy:

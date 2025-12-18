@@ -18,7 +18,7 @@ Usage:
 import yaml
 import argparse
 from datetime import datetime
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Tuple
 import sys
 
 
@@ -36,7 +36,7 @@ class ConfigValidator:
         self.errors = []
         self.warnings = []
     
-    def validate(self) -> tuple[bool, List[str], List[str]]:
+    def validate(self) -> Tuple[bool, List[str], List[str]]:
         """Validate configuration and return status, errors, warnings."""
         self._check_required_sections()
         self._validate_paths()
@@ -414,6 +414,13 @@ def main():
         try:
             with open(args.config, 'r') as f:
                 config = yaml.safe_load(f)
+        except FileNotFoundError:
+            print(f"❌ Error: Configuration file not found: {args.config}")
+            sys.exit(1)
+        except yaml.YAMLError as e:
+            print(f"❌ Error: Invalid YAML syntax in configuration file")
+            print(f"   {e}")
+            sys.exit(1)
         except Exception as e:
             print(f"❌ Error loading configuration: {e}")
             sys.exit(1)

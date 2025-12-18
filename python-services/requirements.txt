@@ -12,9 +12,13 @@ pydantic>=2.0.0
 torch>=2.0.0
 torchvision>=0.15.0
 ultralytics>=8.0.0  # YOLO for object detection
-transformers>=4.30.0
+transformers>=4.35.0  # Updated for Qwen2-VL support
 diffusers>=0.21.0
-accelerate>=0.20.0
+accelerate>=0.24.0  # Updated for VLM training
+bitsandbytes>=0.41.0  # For quantization (int8/int4)
+peft>=0.7.0  # Parameter-Efficient Fine-Tuning (LoRA)
+sentencepiece>=0.1.99  # Tokenization for VLMs
+protobuf>=3.20.0  # For model serialization
 
 # Segment Anything Model (pinned to stable release)
 git+https://github.com/facebookresearch/segment-anything.git@6fdee8f2727f4506cfbbe553e23b895e27956588
@@ -40,6 +44,7 @@ pypdf2>=3.0.0
 pymupdf>=1.23.0
 pdf2image>=1.16.0
 ezdxf>=1.1.0  # DWG/DXF processing
+svgwrite>=1.4.0  # For synthetic data generation
 
 # =============================================================================
 # OCR (Optical Character Recognition)
@@ -67,6 +72,8 @@ python-dotenv>=1.0.0
 tqdm>=4.65.0
 redis>=5.0.0  # Caching (optional, for production)
 celery>=5.3.0  # Background tasks (optional, for production)
+deepspeed>=0.12.0  # Distributed training for VLM (optional)
+wandb>=0.16.0  # Experiment tracking (optional)
 
 # =============================================================================
 # Utilities

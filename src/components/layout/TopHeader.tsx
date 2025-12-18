@@ -100,91 +100,106 @@ export default function TopHeader({ className }: TopHeaderProps) {
   };
 
   return (
-    <header className={`bg-background border-b ${className}`}>
-      <div className="flex items-center justify-between px-6 py-4">
-        {/* Search Bar */}
-        <div className="flex-1 max-w-xl">
+    <header className={`bg-background/95 backdrop-blur-sm border-b transition-all duration-300 ${className}`}>
+      <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 gap-2 sm:gap-4">
+        {/* Search Bar - Responsive width and visibility */}
+        <div className="flex-1 max-w-xs sm:max-w-md lg:max-w-xl">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground transition-colors" />
             <Input
-              placeholder="Search projects, documents, agents..."
-              className="pl-10 pr-4"
+              placeholder="Search..."
+              className="pl-10 pr-4 sm:pr-14 text-sm transition-all duration-200 focus:ring-2 focus:ring-ring"
             />
-            <kbd className="absolute right-3 top-1/2 transform -translate-y-1/2 pointer-events-none inline-flex h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground opacity-100">
+            {/* Command+K shortcut - hidden on mobile */}
+            <kbd className="hidden sm:inline-flex absolute right-3 top-1/2 transform -translate-y-1/2 pointer-events-none h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground opacity-100">
               <Command className="h-3 w-3" />K
             </kbd>
           </div>
         </div>
 
-        {/* Right Section */}
-        <div className="flex items-center space-x-4">
-          {/* Notifications */}
+        {/* Right Section - Responsive spacing */}
+        <div className="flex items-center gap-1 sm:gap-2 md:gap-4">
+          {/* Notifications - Responsive sizing */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="relative">
-                <Bell className="h-4 w-4" />
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="relative transition-all duration-200 hover:bg-accent h-9 w-9 sm:h-10 sm:w-10"
+                aria-label="Notifications"
+              >
+                <Bell className="h-4 w-4 sm:h-5 sm:w-5 transition-all" />
                 <Badge
                   variant="destructive"
-                  className="absolute -top-1 -right-1 h-5 w-5 rounded-full p-0 flex items-center justify-center text-xs"
+                  className="absolute -top-1 -right-1 h-4 w-4 sm:h-5 sm:w-5 rounded-full p-0 flex items-center justify-center text-[10px] sm:text-xs transition-all"
                 >
                   3
                 </Badge>
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-80">
+            <DropdownMenuContent align="end" className="w-72 sm:w-80 md:w-96 transition-all">
               <DropdownMenuLabel>Notifications</DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuItem className="flex flex-col items-start p-4">
+              <DropdownMenuItem className="flex flex-col items-start p-3 sm:p-4 transition-all duration-200 hover:bg-accent cursor-pointer">
                 <div className="flex items-center space-x-2 w-full">
-                  <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                  <span className="font-medium">Clash Detection Complete</span>
-                  <span className="text-xs text-muted-foreground ml-auto">2m ago</span>
+                  <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                  <span className="font-medium text-sm">Clash Detection Complete</span>
+                  <span className="text-xs text-muted-foreground ml-auto whitespace-nowrap">2m ago</span>
                 </div>
-                <p className="text-sm text-muted-foreground mt-1">
+                <p className="text-xs sm:text-sm text-muted-foreground mt-1">
                   Found 3 clashes in Project Alpha BIM model
                 </p>
               </DropdownMenuItem>
-              <DropdownMenuItem className="flex flex-col items-start p-4">
+              <DropdownMenuItem className="flex flex-col items-start p-3 sm:p-4 transition-all duration-200 hover:bg-accent cursor-pointer">
                 <div className="flex items-center space-x-2 w-full">
                   <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                  <span className="font-medium">Document Processed</span>
-                  <span className="text-xs text-muted-foreground ml-auto">5m ago</span>
+                  <span className="font-medium text-sm">Document Processed</span>
+                  <span className="text-xs text-muted-foreground ml-auto whitespace-nowrap">5m ago</span>
                 </div>
-                <p className="text-sm text-muted-foreground mt-1">
+                <p className="text-xs sm:text-sm text-muted-foreground mt-1">
                   CAD drawings successfully converted to 3D
                 </p>
               </DropdownMenuItem>
-              <DropdownMenuItem className="flex flex-col items-start p-4">
+              <DropdownMenuItem className="flex flex-col items-start p-3 sm:p-4 transition-all duration-200 hover:bg-accent cursor-pointer">
                 <div className="flex items-center space-x-2 w-full">
                   <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
-                  <span className="font-medium">PM Bot Update</span>
-                  <span className="text-xs text-muted-foreground ml-auto">10m ago</span>
+                  <span className="font-medium text-sm">PM Bot Update</span>
+                  <span className="text-xs text-muted-foreground ml-auto whitespace-nowrap">10m ago</span>
                 </div>
-                <p className="text-sm text-muted-foreground mt-1">
+                <p className="text-xs sm:text-sm text-muted-foreground mt-1">
                   Task assignment completed for Foundation Phase
                 </p>
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {/* Help */}
-          <Button variant="ghost" size="icon">
-            <HelpCircle className="h-4 w-4" />
+          {/* Help - Hidden on mobile to save space */}
+          <Button 
+            variant="ghost" 
+            size="icon"
+            className="hidden sm:inline-flex transition-all duration-200 hover:bg-accent h-9 w-9 sm:h-10 sm:w-10"
+            aria-label="Help"
+          >
+            <HelpCircle className="h-4 w-4 sm:h-5 sm:w-5" />
           </Button>
 
-          {/* User Menu */}
+          {/* User Menu - Responsive sizing */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" className="relative h-8 w-8 rounded-full">
-                <Avatar className="h-8 w-8">
+              <Button 
+                variant="ghost" 
+                className="relative h-8 w-8 sm:h-9 sm:w-9 rounded-full transition-all duration-200 hover:ring-2 hover:ring-ring hover:ring-offset-2"
+                aria-label="User menu"
+              >
+                <Avatar className="h-8 w-8 sm:h-9 sm:w-9 transition-all">
                   <AvatarImage src="/avatars/01.png" alt="User" />
-                  <AvatarFallback>
+                  <AvatarFallback className="text-xs sm:text-sm">
                     {userInitials}
                   </AvatarFallback>
                 </Avatar>
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent className="w-56" align="end" forceMount>
+            <DropdownMenuContent className="w-52 sm:w-56 transition-all" align="end" forceMount>
               <DropdownMenuLabel className="font-normal">
                 <div className="flex flex-col space-y-1">
                   <p className="text-sm font-medium leading-none">{currentUser?.name || 'User'}</p>
@@ -209,17 +224,20 @@ export default function TopHeader({ className }: TopHeaderProps) {
                 </div>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuItem>
-                <User className="mr-2 h-4 w-4" />
+              <DropdownMenuItem className="transition-all duration-200 hover:bg-accent cursor-pointer">
+                <User className="mr-2 h-4 w-4 transition-transform hover:scale-110" />
                 <span>Profile</span>
               </DropdownMenuItem>
-              <DropdownMenuItem>
-                <Settings className="mr-2 h-4 w-4" />
+              <DropdownMenuItem className="transition-all duration-200 hover:bg-accent cursor-pointer">
+                <Settings className="mr-2 h-4 w-4 transition-transform hover:rotate-90" />
                 <span>Settings</span>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={handleSignOut}>
-                <LogOut className="mr-2 h-4 w-4" />
+              <DropdownMenuItem 
+                onClick={handleSignOut}
+                className="transition-all duration-200 hover:bg-destructive/10 hover:text-destructive cursor-pointer"
+              >
+                <LogOut className="mr-2 h-4 w-4 transition-transform hover:translate-x-1" />
                 <span>Log out</span>
               </DropdownMenuItem>
             </DropdownMenuContent>

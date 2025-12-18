@@ -44,7 +44,13 @@ function getColorForLabel(label: string) {
   return CLASS_COLORS.default;
 }
 
-export default function SAMAnalysis() {
+interface InferenceAnalysisProps {
+  initialImage?: File | null;
+  initialSegments?: Segment[];
+  initialCount?: { total_objects_found: number; counts_by_category: Record<string, number> } | null;
+}
+
+export default function InferenceAnalysis({ initialImage, initialSegments, initialCount }: InferenceAnalysisProps) {
   // --- State ---
   const [uploadedImage, setUploadedImage] = useState<File | null>(null);
   const [analysisState, setAnalysisState] = useState<AnalysisState>('idle');
@@ -56,217 +62,540 @@ export default function SAMAnalysis() {
   const [showFill, setShowFill] = useState(true);
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
 
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const imageRef = useRef<HTMLImageElement | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
+  // Zoom & Pan state
+  const [zoom, setZoom] = useState(1);
+  const [panX, setPanX] = useState(0);
+  const [panY, setPanY] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartRef = useRef<{ x: number; y: number } | null>(null);
 
-  // --- 1. Image Initialization ---
+  const bgCanvasRef = useRef<HTMLCanvasElement>(null);
+  const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
+  const offscreenBgRef = useRef<HTMLCanvasElement | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const scaleRef = useRef<number>(1);
+  const imageRef = useRef<HTMLImageElement | null>(null);
+  const pathCacheRef = useRef<Map<number, Path2D>>(new Map());
+
+  // --- 1. Image Initialization & Cleanup ---
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const img = new Image();
     img.crossOrigin = 'anonymous';
     imageRef.current = img;
+    // Hydrate initial props if provided
+    if (initialImage) setUploadedImage(initialImage);
+    if (initialSegments) setSegments(initialSegments);
+    if (initialCount) setCountResult(initialCount as CountResult);
+    
+    // Capture refs for cleanup (avoid stale closure issues)
+    const pathCache = pathCacheRef.current;
+    const offscreenBg = offscreenBgRef;
+    const imageRefCopy = imageRef;
+    
+    // Cleanup on unmount: clear all caches and release memory
+    return () => {
+      // Clear path cache
+      pathCache.clear();
+      // Clear offscreen canvas
+      offscreenBg.current = null;
+      // Release image reference
+      if (imageRefCopy.current) {
+        imageRefCopy.current.src = '';
+        imageRefCopy.current = null;
+      }
+    };
+  }, [initialImage, initialSegments, initialCount]);
+
+  // Utility: resize a canvas to image size with DPR handling and optimization
+  const resizeCanvasToImage = useCallback((canvas: HTMLCanvasElement, width: number, height: number) => {
+    const dpr = window.devicePixelRatio || 1;
+    // Subpixel precision: round to 2 decimal places for true 1:1 pixel mapping
+    canvas.width = Math.round(width * dpr * 100) / 100;
+    canvas.height = Math.round(height * dpr * 100) / 100;
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+    const ctx = canvas.getContext('2d', {
+      alpha: true,
+      desynchronized: true, // Off-main-thread rendering for better performance
+      willReadFrequently: false, // Optimize for drawing operations
+    });
+    if (ctx) {
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      // Enable high-quality anti-aliasing
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+    }
   }, []);
 
-  // --- 2. The Vector Drawing Engine ---
-  const drawCanvasContent = useCallback(() => {
-    const canvas = canvasRef.current;
+  // Create offscreen canvas for background to cache high-res image
+  const createOffscreenBackground = useCallback((displayW: number, displayH: number) => {
+    const img = imageRef.current;
+    if (!img || !img.src) return;
+    const dpr = window.devicePixelRatio || 1;
+    const offscreen = document.createElement('canvas');
+    // Subpixel precision for offscreen canvas
+    offscreen.width = Math.round(displayW * dpr * 100) / 100;
+    offscreen.height = Math.round(displayH * dpr * 100) / 100;
+    const ctx = offscreen.getContext('2d', {
+      alpha: false, // Background doesn't need alpha
+      desynchronized: true,
+      willReadFrequently: false,
+    });
+    if (ctx) {
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      // High-quality image rendering
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(img, 0, 0, displayW, displayH);
+    }
+    offscreenBgRef.current = offscreen;
+  }, []);
+
+  // Draw the background from offscreen cache with zoom/pan transform
+  const drawBackground = useCallback(() => {
+    const bg = bgCanvasRef.current;
+    const offscreen = offscreenBgRef.current;
+    if (!bg || !offscreen) return;
+    const ctx = bg.getContext('2d');
+    if (!ctx) return;
+    ctx.save();
+    ctx.clearRect(0, 0, bg.width, bg.height);
+    // Apply zoom & pan transform
+    ctx.translate(panX, panY);
+    ctx.scale(zoom, zoom);
+    // Draw cached offscreen image
+    const w = parseFloat(bg.style.width || '0');
+    const h = parseFloat(bg.style.height || '0');
+    ctx.drawImage(offscreen, 0, 0, w, h);
+    ctx.restore();
+  }, [zoom, panX, panY]);
+
+  // Build/retrieve cached Path2D for a segment with subpixel precision and validation
+  const getSegmentPath = useCallback((index: number, segment: Segment): Path2D | null => {
+    if (pathCacheRef.current.has(index)) {
+      return pathCacheRef.current.get(index) ?? null;
+    }
+    
+    let poly2d: number[][] | null = null;
+    if (segment.polygon && segment.polygon.length > 0) {
+      const first = segment.polygon[0];
+      const isPoint = (p: unknown): p is number[] => Array.isArray(p) && typeof (p as unknown[])[0] === 'number';
+      const isPolyOfPolys = (p: unknown): p is number[][][] => Array.isArray(p) && Array.isArray((p as unknown[])[0]) && Array.isArray(((p as unknown[])[0] as unknown[])[0]);
+      if (isPoint(first)) poly2d = segment.polygon as number[][];
+      else if (isPolyOfPolys(segment.polygon)) poly2d = (segment.polygon as number[][][])[0];
+    }
+    
+    // Validate polygon: must have at least 3 points to form a valid shape
+    if (!poly2d || poly2d.length < 3) {
+      console.warn(`[InferenceAnalysis] Invalid polygon for segment ${index}: ${poly2d?.length || 0} points (need ≥3)`);
+      return null;
+    }
+    
+    // Validate coordinates: must be finite numbers within reasonable bounds
+    const img = imageRef.current;
+    const maxX = img ? img.naturalWidth * 2 : 10000; // Allow 2x natural size for safety
+    const maxY = img ? img.naturalHeight * 2 : 10000;
+    
+    for (let i = 0; i < poly2d.length; i++) {
+      const [x, y] = poly2d[i];
+      if (!Number.isFinite(x) || !Number.isFinite(y) || x < -maxX || x > maxX || y < -maxY || y > maxY) {
+        console.warn(`[InferenceAnalysis] Invalid coordinates for segment ${index} at point ${i}: [${x}, ${y}]`);
+        return null;
+      }
+    }
+    
+    const s = scaleRef.current || 1;
+    const path = new Path2D();
+    
+    // Subpixel precision: round coordinates to 2 decimal places
+    const x0 = Math.round(poly2d[0][0] * s * 100) / 100;
+    const y0 = Math.round(poly2d[0][1] * s * 100) / 100;
+    path.moveTo(x0, y0);
+    
+    for (let i = 1; i < poly2d.length; i++) {
+      const x = Math.round(poly2d[i][0] * s * 100) / 100;
+      const y = Math.round(poly2d[i][1] * s * 100) / 100;
+      path.lineTo(x, y);
+    }
+    
+    path.closePath();
+    pathCacheRef.current.set(index, path);
+    return path;
+  }, []);
+
+  // Draw overlays (polygons, boxes, labels) with zoom/pan transform and advanced rendering
+  const drawOverlay = useCallback(() => {
+    const canvas = overlayCanvasRef.current;
     const img = imageRef.current;
     if (!canvas || !img || !img.src) return;
-
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // A. Draw Base Image
-    // We render at natural resolution for sharpness, CSS handles display size
+    ctx.save();
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    // Apply zoom & pan transform
+    ctx.translate(panX, panY);
+    ctx.scale(zoom, zoom);
 
-    // B. Draw Segments
-    segments.forEach((segment, index) => {
+    // Configure rendering quality
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.lineJoin = 'round'; // Smooth corners
+    ctx.lineCap = 'round'; // Smooth line ends
+    ctx.miterLimit = 2; // Prevent sharp spikes
+
+    // Loop segments and draw
+    for (let index = 0; index < segments.length; index++) {
+      const segment = segments[index];
       const isHovered = index === hoveredIndex;
       const baseColor = getColorForLabel(segment.label);
-      
-      // If we have vector polygon data (Preferred)
-      if (segment.polygon && segment.polygon.length > 0) {
-        // Normalize polygon shape: support both [ [x,y], ... ] and [ [[x,y], ...], [[x,y], ...] ]
-        let poly2d: number[][] | null = null;
-        try {
-          const first = segment.polygon[0];
 
-          const isPoint = (p: unknown): p is number[] => {
-            return Array.isArray(p) && typeof (p as unknown[])[0] === 'number';
-          };
-
-          const isPolyOfPolys = (p: unknown): p is number[][][] => {
-            return Array.isArray(p) && Array.isArray((p as unknown[])[0]) && Array.isArray(((p as unknown[])[0] as unknown[])[0]);
-          };
-
-          if (isPoint(first)) {
-            poly2d = segment.polygon as number[][];
-          } else if (isPolyOfPolys(segment.polygon)) {
-            poly2d = (segment.polygon as number[][][])[0];
-          }
-        } catch (e) {
-          poly2d = null;
-        }
-
-        if (poly2d && poly2d.length > 0) {
-          ctx.beginPath();
-          // Move to first point
-          ctx.moveTo(poly2d[0][0] as number, poly2d[0][1] as number);
-          // Draw lines to subsequent points
-          for (let i = 1; i < poly2d.length; i++) {
-            ctx.lineTo(poly2d[i][0] as number, poly2d[i][1] as number);
-          }
-          ctx.closePath();
-        }
-
-        // 1. Stroke (Outline)
+      const path = getSegmentPath(index, segment);
+      if (path) {
+        // Enhanced stroke rendering
+        ctx.lineWidth = isHovered ? 3.5 : 2;
         ctx.strokeStyle = baseColor;
-        ctx.lineWidth = isHovered ? 4 : 2; // Thicker on hover
-        ctx.stroke();
+        ctx.stroke(path);
 
-        // 2. Fill (Subtle)
+        // Enhanced fill with better opacity
         if (showFill || isHovered) {
+          ctx.save();
+          ctx.globalAlpha = isHovered ? 0.35 : 0.15;
           ctx.fillStyle = baseColor;
-          // Very transparent normally (0.1), slightly more on hover (0.3)
-          ctx.globalAlpha = isHovered ? 0.3 : 0.1; 
-          ctx.fill();
-          ctx.globalAlpha = 1.0; // Reset
+          ctx.fill(path);
+          ctx.restore();
         }
-      } 
-      // Fallback for BBox only if no polygon
-      else {
+      } else {
+        // bbox fallback with subpixel precision
         const [x, y, x2, y2] = segment.bbox;
-        const w = x2 - x;
-        const h = y2 - y;
-        
+        const s = scaleRef.current || 1;
+        const sx = Math.round(x * s * 100) / 100;
+        const sy = Math.round(y * s * 100) / 100;
+        const sw = Math.round((x2 - x) * s * 100) / 100;
+        const sh = Math.round((y2 - y) * s * 100) / 100;
+        ctx.lineWidth = isHovered ? 3.5 : 2;
         ctx.strokeStyle = baseColor;
-        ctx.lineWidth = isHovered ? 4 : 2;
-        ctx.strokeRect(x, y, w, h);
+        ctx.strokeRect(sx, sy, sw, sh);
       }
 
-      // C. Draw Labels (Optimized)
-      // Only draw if enabled globally OR if this specific item is hovered
+      // Enhanced labels with rounded rectangles and gradients
       if (showLabels || isHovered) {
         const [x, y] = segment.bbox;
+        const s = scaleRef.current || 1;
         const labelText = `${segment.label} ${Math.round(segment.score * 100)}%`;
-        
-        ctx.font = isHovered ? 'bold 16px Inter, sans-serif' : '12px Inter, sans-serif';
+        // Improved font stack with system fonts
+        ctx.font = isHovered 
+          ? 'bold 16px -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif' 
+          : '12px -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif';
         const textMetrics = ctx.measureText(labelText);
-        
-        const pad = 4;
-        const textW = textMetrics.width + (pad * 2);
-        const textH = isHovered ? 24 : 18;
+        const pad = 6;
+        const textW = textMetrics.width + pad * 2;
+        const textH = isHovered ? 26 : 20;
+        const labelX = Math.round(x * s * 100) / 100;
+        const labelY = Math.round((y * s) * 100) / 100 - textH;
+        const cornerRadius = 4;
 
-        // Draw Label Background
-        ctx.fillStyle = isHovered ? baseColor : 'rgba(0,0,0,0.6)';
-        ctx.fillRect(x, y - textH, textW, textH);
+        // Rounded rectangle background
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(labelX + cornerRadius, labelY);
+        ctx.lineTo(labelX + textW - cornerRadius, labelY);
+        ctx.quadraticCurveTo(labelX + textW, labelY, labelX + textW, labelY + cornerRadius);
+        ctx.lineTo(labelX + textW, labelY + textH - cornerRadius);
+        ctx.quadraticCurveTo(labelX + textW, labelY + textH, labelX + textW - cornerRadius, labelY + textH);
+        ctx.lineTo(labelX + cornerRadius, labelY + textH);
+        ctx.quadraticCurveTo(labelX, labelY + textH, labelX, labelY + textH - cornerRadius);
+        ctx.lineTo(labelX, labelY + cornerRadius);
+        ctx.quadraticCurveTo(labelX, labelY, labelX + cornerRadius, labelY);
+        ctx.closePath();
 
-        // Draw Label Text
-        ctx.fillStyle = '#ffffff';
-        ctx.fillText(labelText, x + pad, y - 6);
-      }
-    });
-  }, [segments, hoveredIndex, showLabels, showFill]);
+        // Gradient background for hover state
+        if (isHovered) {
+          const gradient = ctx.createLinearGradient(labelX, labelY, labelX, labelY + textH);
+          gradient.addColorStop(0, baseColor);
+          gradient.addColorStop(1, baseColor + 'cc');
+          ctx.fillStyle = gradient;
+        } else {
+          ctx.fillStyle = 'rgba(0,0,0,0.75)';
+        }
+        ctx.fill();
+        ctx.restore();
 
-  // --- 3. Interaction Handlers ---
-
-  // Handle Mouse Move for Hover Effects
-  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const rect = canvas.getBoundingClientRect();
-    // Calculate mouse position relative to actual image coordinates
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-    const mouseX = (e.clientX - rect.left) * scaleX;
-    const mouseY = (e.clientY - rect.top) * scaleY;
-
-    // Find the first segment containing the mouse
-    // We iterate backwards to find the "top-most" item visually
-    let foundIndex: number | null = null;
-    for (let i = segments.length - 1; i >= 0; i--) {
-      const [x1, y1, x2, y2] = segments[i].bbox;
-      if (mouseX >= x1 && mouseX <= x2 && mouseY >= y1 && mouseY <= y2) {
-        foundIndex = i;
-        break;
+        // Text with shadow for better contrast
+        ctx.save();
+        ctx.shadowColor = 'rgba(0,0,0,0.5)';
+        ctx.shadowBlur = 2;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 1;
+        ctx.fillStyle = '#fff';
+        ctx.fillText(labelText, labelX + pad, labelY + (isHovered ? 17 : 14));
+        ctx.restore();
       }
     }
+    ctx.restore();
+  }, [segments, hoveredIndex, showLabels, showFill, getSegmentPath, zoom, panX, panY]);
 
-    if (foundIndex !== hoveredIndex) {
-      setHoveredIndex(foundIndex);
-    }
-  }, [segments, hoveredIndex]);
-
-  // Handle Image Load
+  // Handle Image Load & resize canvases (with proper cleanup to prevent memory leaks)
   useEffect(() => {
     const img = imageRef.current;
-    const canvas = canvasRef.current;
     if (!img) return;
 
     const handleLoad = () => {
-      if (canvas) {
-        canvas.width = img.naturalWidth;
-        canvas.height = img.naturalHeight;
-        drawCanvasContent();
-      }
+      const bg = bgCanvasRef.current;
+      const overlay = overlayCanvasRef.current;
+      if (!bg || !overlay) return;
+      const parent = containerRef.current;
+      const availableW = parent ? Math.max(200, parent.clientWidth) : Math.min(img.naturalWidth, window.innerWidth * 0.7);
+      // maintain aspect ratio, compute display size to fit container width
+      const aspect = img.naturalWidth ? img.naturalHeight / img.naturalWidth : 1;
+      const displayW = Math.min(img.naturalWidth, availableW - 32); // small padding
+      const displayH = Math.round(displayW * aspect);
+      // scale ref = display / natural
+      scaleRef.current = displayW / img.naturalWidth;
+      resizeCanvasToImage(bg, displayW, displayH);
+      resizeCanvasToImage(overlay, displayW, displayH);
+      // Create offscreen background cache
+      createOffscreenBackground(displayW, displayH);
+      // Clear path cache when image changes
+      pathCacheRef.current.clear();
+      drawBackground();
+      drawOverlay();
     };
+    
+    const handleError = () => {
+      toast.error('Failed to load image. Please try another file.', { duration: 4000 });
+      console.error('[InferenceAnalysis] Image load error');
+    };
+
     img.addEventListener('load', handleLoad);
+    img.addEventListener('error', handleError);
     
     if (uploadedImage) {
       const url = URL.createObjectURL(uploadedImage);
       img.src = url;
-      return () => { URL.revokeObjectURL(url); img.removeEventListener('load', handleLoad); };
+      
+      // Cleanup: revoke blob URL and remove listeners to prevent memory leaks
+      return () => {
+        URL.revokeObjectURL(url);
+        img.removeEventListener('load', handleLoad);
+        img.removeEventListener('error', handleError);
+        // Clear src to release image memory
+        img.src = '';
+      };
     }
-  }, [uploadedImage, drawCanvasContent]);
+    
+    // Cleanup when component unmounts
+    return () => {
+      img.removeEventListener('load', handleLoad);
+      img.removeEventListener('error', handleError);
+    };
+  }, [uploadedImage, resizeCanvasToImage, createOffscreenBackground, drawBackground, drawOverlay]);
 
-  // Redraw when interaction state changes
+  // Redraw canvases when zoom/pan or segments change
   useEffect(() => {
-    requestAnimationFrame(drawCanvasContent);
-  }, [drawCanvasContent]);
+    requestAnimationFrame(() => {
+      drawBackground();
+      drawOverlay();
+    });
+  }, [drawBackground, drawOverlay]);
 
+  // Zoom & Pan handlers with smooth zoom range (0.5x to 3x industry standard)
+  const handleWheel = useCallback((e: React.WheelEvent) => {
+    e.preventDefault();
+    const delta = e.deltaY * -0.0015; // Smoother zoom increment
+    const newZoom = Math.min(Math.max(0.5, zoom + delta), 3);
+    setZoom(newZoom);
+  }, [zoom]);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (e.button === 0) { // left click
+      setIsDragging(true);
+      dragStartRef.current = { x: e.clientX - panX, y: e.clientY - panY };
+    }
+  }, [panX, panY]);
+
+  const handleMouseUp = useCallback(() => {
+    setIsDragging(false);
+    dragStartRef.current = null;
+  }, []);
+
+  const handleMouseMoveCanvas = useCallback((e: React.MouseEvent) => {
+    if (isDragging && dragStartRef.current) {
+      setPanX(e.clientX - dragStartRef.current.x);
+      setPanY(e.clientY - dragStartRef.current.y);
+    }
+  }, [isDragging]);
+
+  const resetView = useCallback(() => {
+    setZoom(1);
+    setPanX(0);
+    setPanY(0);
+  }, []);
+
+  // Mouse move handler: use precise polygon hit-testing when possible
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    const overlay = overlayCanvasRef.current;
+    const img = imageRef.current;
+    if (!overlay || !img) return;
+    const rect = overlay.getBoundingClientRect();
+    // Transform mouse coords by inverse of zoom/pan to get canvas-space coords
+    const mouseX = (e.clientX - rect.left - panX) / zoom;
+    const mouseY = (e.clientY - rect.top - panY) / zoom;
+
+    // iterate top-most first
+    for (let i = segments.length - 1; i >= 0; i--) {
+      const seg = segments[i];
+      let hit = false;
+      if (seg.polygon && seg.polygon.length > 0) {
+        let poly2d: number[][] | null = null;
+        const first = seg.polygon[0];
+        const isPoint = (p: unknown): p is number[] => Array.isArray(p) && typeof (p as unknown[])[0] === 'number';
+        const isPolyOfPolys = (p: unknown): p is number[][][] => Array.isArray(p) && Array.isArray((p as unknown[])[0]) && Array.isArray(((p as unknown[])[0] as unknown[])[0]);
+        if (isPoint(first)) poly2d = seg.polygon as number[][];
+        else if (isPolyOfPolys(seg.polygon)) poly2d = (seg.polygon as number[][][])[0];
+
+        if (poly2d) {
+          const s = scaleRef.current || 1;
+          const path = new Path2D();
+          path.moveTo(poly2d[0][0] * s, poly2d[0][1] * s);
+          for (let k = 1; k < poly2d.length; k++) path.lineTo(poly2d[k][0] * s, poly2d[k][1] * s);
+          path.closePath();
+          const ctx = overlay.getContext('2d');
+          if (ctx && ctx.isPointInPath(path, mouseX, mouseY)) {
+            hit = true;
+          }
+        }
+      }
+      if (!hit) {
+        const [x1, y1, x2, y2] = seg.bbox;
+        const s = scaleRef.current || 1;
+        if (mouseX >= x1 * s && mouseX <= x2 * s && mouseY >= y1 * s && mouseY <= y2 * s) hit = true;
+      }
+      if (hit) {
+        if (hoveredIndex !== i) setHoveredIndex(i);
+        return;
+      }
+    }
+    if (hoveredIndex !== null) setHoveredIndex(null);
+  }, [segments, hoveredIndex, zoom, panX, panY]);
 
   // --- 4. API Call ---
   const handleAnalyze = async () => {
-    if (!uploadedImage) return;
+    if (!uploadedImage) {
+      toast.error('Please upload an image first');
+      return;
+    }
+    
     setAnalysisState('analyzing');
     setSegments([]);
     setCountResult(null);
 
     const formData = new FormData();
     formData.append('image', uploadedImage);
-    // We set a balanced threshold of 0.50 as discussed
-    formData.append('conf_threshold', '0.50'); 
+    
+    // Industry-standard YOLO confidence threshold (0.50 = balanced precision/recall)
+    // Lower values (0.25-0.40) = more detections but more false positives
+    // Higher values (0.60-0.75) = fewer detections but higher precision
+    formData.append('conf_threshold', '0.50');
+    
+    // NMS (Non-Maximum Suppression) threshold for overlapping detections
+    // 0.45 is industry standard (removes duplicate bounding boxes effectively)
+    formData.append('nms_threshold', '0.45');
 
     try {
       const res = await fetch(`${API_BASE_URL}/api/v1/analyze`, {
         method: 'POST',
         body: formData,
       });
-      if (!res.ok) throw new Error('Analysis failed');
+      
+      if (!res.ok) {
+        const errorText = await res.text();
+        let errorMessage = 'Analysis failed';
+        
+        // Provide specific error feedback based on status code
+        if (res.status === 413) {
+          errorMessage = 'Image too large for server. Please resize to <10MB.';
+        } else if (res.status === 415) {
+          errorMessage = 'Unsupported image format. Use JPG, PNG, or TIFF.';
+        } else if (res.status === 500) {
+          errorMessage = 'Server error during analysis. Please try again.';
+        } else if (res.status === 503) {
+          errorMessage = 'Analysis service unavailable. Please try again later.';
+        } else {
+          try {
+            const errorData = JSON.parse(errorText);
+            errorMessage = errorData.message || errorMessage;
+          } catch {
+            // Use default error message if parsing fails
+          }
+        }
+        
+        toast.error(errorMessage, { duration: 5000 });
+        throw new Error(errorMessage);
+      }
       
       const data = await res.json();
+      
+      // Validate response data structure
+      if (!data.segments || !Array.isArray(data.segments)) {
+        toast.error('Invalid response format from analysis service');
+        throw new Error('Invalid response structure');
+      }
+      
       setSegments(data.segments);
       setCountResult(data);
-      toast.success(`Found ${data.total_objects_found} components`);
+      
+      const count = data.total_objects_found || data.segments.length;
+      toast.success(`Analysis complete: Found ${count} component${count !== 1 ? 's' : ''}`, { duration: 3000 });
     } catch (e) {
-      toast.error('Failed to analyze image');
-      console.error(e);
+      const errorMsg = e instanceof Error ? e.message : 'Failed to analyze image';
+      if (!errorMsg.includes('Analysis')) {
+        toast.error(errorMsg, { duration: 4000 });
+      }
+      console.error('[InferenceAnalysis] Analysis error:', e);
     } finally {
       setAnalysisState('idle');
     }
   };
 
   const handleDrop = useCallback((files: File[]) => {
-    if (files.length > 0) setUploadedImage(files[0]);
+    if (files.length > 0) {
+      const file = files[0];
+      
+      // Industry-standard 10MB limit for optimal upload/processing performance
+      const maxSize = 10 * 1024 * 1024; // 10MB
+      if (file.size > maxSize) {
+        toast.error(
+          `File size (${(file.size / 1024 / 1024).toFixed(1)}MB) exceeds 10MB limit. For best results, resize images to ~1280px width (YOLO standard).`,
+          { duration: 5000 }
+        );
+        return;
+      }
+      
+      // Validate image format (including TIFF for technical drawings)
+      const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/tiff', 'image/bmp'];
+      const fileType = file.type.toLowerCase();
+      if (!validTypes.includes(fileType) && !file.name.match(/\.(jpg|jpeg|png|tiff|tif|bmp)$/i)) {
+        toast.error('Please upload a valid image file (JPG, PNG, TIFF, or BMP)', { duration: 4000 });
+        return;
+      }
+      
+      // Success feedback
+      setUploadedImage(file);
+      toast.success(`Loaded ${file.name} (${(file.size / 1024).toFixed(0)}KB)`, { duration: 2000 });
+    }
   }, []);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop: handleDrop,
-    accept: { 'image/*': ['.png', '.jpg', '.jpeg'] },
+    accept: { 
+      'image/jpeg': ['.jpg', '.jpeg'],
+      'image/png': ['.png'],
+      'image/tiff': ['.tiff', '.tif'],
+      'image/bmp': ['.bmp']
+    },
+    maxFiles: 1,
     multiple: false
   });
 
@@ -332,17 +661,93 @@ export default function SAMAnalysis() {
                   <Switch id="show-fill" checked={showFill} onCheckedChange={setShowFill} />
                   <Label htmlFor="show-fill" className="text-sm cursor-pointer">Fill</Label>
                 </div>
+                <div className="flex items-center gap-2 border-l pl-4" role="group" aria-label="Zoom controls">
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => setZoom(Math.min(3, zoom * 1.2))}
+                    aria-label="Zoom in (or press + key)"
+                    disabled={zoom >= 3}
+                  >
+                    Zoom In
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => setZoom(Math.max(0.5, zoom / 1.2))}
+                    aria-label="Zoom out (or press - key)"
+                    disabled={zoom <= 0.5}
+                  >
+                    Zoom Out
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={resetView}
+                    aria-label="Reset view to default (or press 0 key)"
+                  >
+                    Reset View
+                  </Button>
+                  <span className="text-xs text-gray-500" role="status" aria-live="polite" aria-atomic="true">
+                    {Math.round(zoom * 100)}%
+                  </span>
+                </div>
               </div>
             </CardHeader>
             
             <CardContent className="p-0 bg-slate-900 relative min-h-[500px] flex items-center justify-center overflow-auto">
-              <canvas 
-                ref={canvasRef}
-                onMouseMove={handleMouseMove}
-                onMouseLeave={() => setHoveredIndex(null)}
-                className="max-w-full h-auto shadow-2xl"
-                style={{ cursor: hoveredIndex !== null ? 'pointer' : 'default' }}
-              />
+              <div 
+                className="relative" 
+                ref={containerRef}
+                role="img"
+                aria-label={`HVAC blueprint visualization with ${segments.length} detected components. Use +/- to zoom, arrow keys to pan.`}
+                tabIndex={0}
+                onWheel={handleWheel}
+                onMouseDown={handleMouseDown}
+                onMouseUp={handleMouseUp}
+                onMouseMove={handleMouseMoveCanvas}
+                onMouseLeave={() => { setHoveredIndex(null); setIsDragging(false); }}
+                onKeyDown={(e) => {
+                  // Keyboard controls for accessibility
+                  if (e.key === '+' || e.key === '=') {
+                    e.preventDefault();
+                    setZoom(Math.min(3, zoom * 1.2));
+                  } else if (e.key === '-' || e.key === '_') {
+                    e.preventDefault();
+                    setZoom(Math.max(0.5, zoom / 1.2));
+                  } else if (e.key === '0') {
+                    e.preventDefault();
+                    resetView();
+                  } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    setPanY(panY + 30);
+                  } else if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    setPanY(panY - 30);
+                  } else if (e.key === 'ArrowLeft') {
+                    e.preventDefault();
+                    setPanX(panX + 30);
+                  } else if (e.key === 'ArrowRight') {
+                    e.preventDefault();
+                    setPanX(panX - 30);
+                  }
+                }}
+                style={{ cursor: isDragging ? 'grabbing' : (hoveredIndex !== null ? 'pointer' : 'grab') }}
+              >
+                <canvas
+                  ref={bgCanvasRef}
+                  className="max-w-full h-auto shadow-2xl block"
+                  aria-hidden="true"
+                />
+                <canvas
+                  ref={overlayCanvasRef}
+                  onMouseMove={handleMouseMove}
+                  className="absolute top-0 left-0 max-w-full h-auto"
+                  aria-label={`${segments.length} component overlays`}
+                  role="presentation"
+                  style={{ pointerEvents: 'none' }}
+                />
+              </div>
               {/* Hover Tooltip Overlay */}
               {hoveredIndex !== null && segments[hoveredIndex] && (
                 <div 

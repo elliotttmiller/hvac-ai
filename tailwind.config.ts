@@ -1,4 +1,5 @@
 import type { Config } from "tailwindcss";
+import tailwindcssAnimate from "tailwindcss-animate";
 
 export default {
     darkMode: ["class"],
@@ -57,23 +58,60 @@ export default {
         sm: 'calc(var(--radius) - 4px)'
       },
       container: {
-      center: true,
-      padding: {
-        DEFAULT: '1rem',
-        sm: '2rem',
-        lg: '4rem',
-        xl: '5rem',
-        '2xl': '6rem',
+        center: true,
+        padding: {
+          DEFAULT: '1rem',
+          sm: '2rem',
+          lg: '4rem',
+          xl: '5rem',
+          '2xl': '6rem',
+        },
+        screens: {
+          sm: '640px',
+          md: '768px',
+          lg: '1024px',
+          xl: '1280px',
+          '2xl': '1536px',
+        },
       },
+      // Industry-standard smooth transitions
+      transitionDuration: {
+        '0': '0ms',
+        '75': '75ms',
+        '100': '100ms',
+        '150': '150ms',
+        '200': '200ms',
+        '300': '300ms',
+        '400': '400ms',
+        '500': '500ms',
+        '700': '700ms',
+        '1000': '1000ms',
+      },
+      transitionTimingFunction: {
+        'smooth': 'cubic-bezier(0.4, 0, 0.2, 1)',
+        'smooth-in': 'cubic-bezier(0.4, 0, 1, 1)',
+        'smooth-out': 'cubic-bezier(0, 0, 0.2, 1)',
+        'smooth-in-out': 'cubic-bezier(0.4, 0, 0.2, 1)',
+        'bounce-smooth': 'cubic-bezier(0.68, -0.55, 0.265, 1.55)',
+      },
+      // Fluid spacing for responsive design
+      spacing: {
+        '18': '4.5rem',
+        '88': '22rem',
+        '100': '25rem',
+        '128': '32rem',
+      },
+      // Responsive breakpoints (matching Tailwind defaults + custom)
       screens: {
-        sm: '640px',
-        md: '768px',
-        lg: '1024px',
-        xl: '1280px',
+        'xs': '475px',
+        'sm': '640px',
+        'md': '768px',
+        'lg': '1024px',
+        'xl': '1280px',
         '2xl': '1536px',
-      },
+        '3xl': '1920px',
       },
     }
   },
-  plugins: [require("tailwindcss-animate")],
+  plugins: [tailwindcssAnimate],
 } satisfies Config;

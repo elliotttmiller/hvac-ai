@@ -8,6 +8,7 @@ An enterprise-grade platform combining Next.js frontend with Python AI services 
 
 ### Core Capabilities
 - 🤖 **SAHI-Powered Detection** - Slice-based inference for 90%+ accuracy on all blueprint sizes
+- 🧠 **Vision-Language Model (VLM)** - Domain-specific AI for pristine HVAC analysis precision
 - 🔍 **HVAC System Analysis** - Relationship graphs and connectivity validation
 - 📋 **Code Compliance** - ASHRAE Standard 62.1 and SMACNA validation
 - 📐 **Multi-Format Support** - PDF, DWG, DXF, PNG, JPG, TIFF processing
@@ -49,6 +50,9 @@ cd python-services && python hvac_analysis_service.py  # Backend (port 8000)
 - [API Documentation](http://localhost:8000/docs) - Interactive API docs (when backend is running)
 
 ### New Features Documentation
+- **[VLM Implementation Guide](docs/VLM_IMPLEMENTATION_GUIDE.md)** - 🆕 Vision-Language Model for HVAC
+- **[VLM Development Roadmap](docs/VLM_ROADMAP.md)** - 🆕 12-month development plan
+- **[VLM Examples](examples/vlm/README.md)** - 🆕 Training and inference examples
 - [SAHI Integration](docs/adr/001-sahi-integration.md) - Architecture decision for slice-based inference
 - [Prompt Engineering](docs/adr/002-hvac-prompt-engineering.md) - HVAC-specific prompts
 - [System Validation](docs/adr/003-system-relationship-validation.md) - Relationship analysis
@@ -81,6 +85,7 @@ hvac-ai/
 ├── python-services/        # Backend (FastAPI/Python)
 │   ├── core/              # Core business logic
 │   │   ├── ai/           # AI models and inference
+│   │   ├── vlm/          # 🆕 Vision-Language Model system
 │   │   ├── document/     # Document processing
 │   │   ├── estimation/   # Cost estimation
 │   │   └── location/     # Location intelligence

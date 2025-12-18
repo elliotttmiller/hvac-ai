@@ -259,7 +259,7 @@ class SupervisedFinetuner:
         # Train
         logger.info(f"Training on {len(train_dataset)} samples")
         if eval_dataset:
-            logger.info(f"Evaluating on {eval_dataset} samples")
+            logger.info(f"Evaluating on {len(eval_dataset)} samples")
         
         train_result = trainer.train()
         

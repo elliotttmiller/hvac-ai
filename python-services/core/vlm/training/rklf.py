@@ -6,7 +6,7 @@ Similar to RLHF but using domain knowledge validators instead of human feedback.
 """
 
 import logging
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 import torch
 
 from ..validation.hvac_validator import HVACValidator, ValidationResult
@@ -80,7 +80,7 @@ class RKLFTrainer:
         self,
         image_path: str,
         prompt: str
-    ) -> tuple[str, ValidationResult, float]:
+    ) -> Tuple[str, ValidationResult, float]:
         """
         Generate prediction and validate it
         

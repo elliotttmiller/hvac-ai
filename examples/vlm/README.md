@@ -259,7 +259,7 @@ vlm.load_model()
 
 - **Latency:** <2 seconds per drawing
 - **Throughput:** 30+ images/minute on A100
-- **GPU Memory:** <8GB for inference
+- **GPU Memory:** ~8-12GB for inference (with quantization)
 
 ## Troubleshooting
 

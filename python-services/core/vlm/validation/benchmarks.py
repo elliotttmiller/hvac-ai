@@ -125,8 +125,9 @@ class HVACBenchmark:
             # 3. Calculate metrics
             # 4. Measure inference time
             
-            # Placeholder implementation
-            pass
+            # TODO: Implement actual benchmarking logic
+            # For now, this is a placeholder that returns zero metrics
+            continue
         
         # Calculate aggregate metrics
         # This is a placeholder - real implementation would compute from collected metrics

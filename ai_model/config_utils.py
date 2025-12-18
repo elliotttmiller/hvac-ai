@@ -18,6 +18,8 @@ Usage:
 import yaml
 import argparse
 from datetime import datetime
+# Use Tuple from typing for Python 3.8 compatibility
+# For Python 3.9+, could use built-in tuple[] syntax
 from typing import Dict, Any, List, Tuple
 import sys
 
@@ -37,7 +39,15 @@ class ConfigValidator:
         self.warnings = []
     
     def validate(self) -> Tuple[bool, List[str], List[str]]:
-        """Validate configuration and return status, errors, warnings."""
+        """
+        Validate configuration and return status, errors, warnings.
+        
+        Returns:
+            Tuple[is_valid, error_list, warning_list]: 
+                - is_valid: True if no errors found
+                - error_list: List of error messages
+                - warning_list: List of warning messages
+        """
         self._check_required_sections()
         self._validate_paths()
         self._validate_model()

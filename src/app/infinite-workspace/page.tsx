@@ -17,6 +17,15 @@ const InfiniteWorkspace = () => {
   const [imageSrc, setImageSrc] = useState<string | null>(null);
   const [detections, setDetections] = useState<Detection[]>([]);
   
+  // Cleanup object URL on unmount to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      if (imageSrc) {
+        URL.revokeObjectURL(imageSrc);
+      }
+    };
+  }, [imageSrc]);
+  
   // Mock function to simulate backend inference
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];

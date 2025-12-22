@@ -17,7 +17,6 @@ const DrawingViewer: React.FC<DrawingViewerProps> = ({ imageSrc, detections }) =
   const containerRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [dimensions, setDimensions] = useState({ w: 0, h: 0 });
 
   // Handle Resize & Canvas Drawing
   useEffect(() => {
@@ -79,10 +78,15 @@ const DrawingViewer: React.FC<DrawingViewerProps> = ({ imageSrc, detections }) =
     if (img && img.complete) {
       handleResize();
     } else if (img) {
-      img.onload = handleResize;
+      img.addEventListener('load', handleResize);
     }
 
-    return () => window.removeEventListener('resize', handleResize);
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      if (img) {
+        img.removeEventListener('load', handleResize);
+      }
+    };
   }, [detections, imageSrc]);
 
   return (

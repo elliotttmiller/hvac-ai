@@ -202,3 +202,55 @@ async def analyze_blueprint_stream(request: Request, image: UploadFile = File(..
 @app.post("/api/v1/count")
 async def count_components(image: UploadFile = File(...), conf: float = Form(0.25)):
     return await analyze_blueprint(image, conf)
+
+@app.post("/api/v1/annotations/save")
+async def save_annotation_delta(request: Request):
+    """Save annotation changes using delta (differential) format.
+    
+    Accepts a JSON payload with:
+    - added: list of new annotations
+    - modified: list of changed annotations  
+    - deleted: list of annotation IDs to remove
+    - verification_status: optional status flag
+    
+    This minimizes data transfer by only sending changes, not the full dataset.
+    """
+    logger.info(f"📡 [API] Received Delta Save Request")
+    
+    try:
+        payload = await request.json()
+        
+        added = payload.get('added', [])
+        modified = payload.get('modified', [])
+        deleted = payload.get('deleted', [])
+        verification_status = payload.get('verification_status', 'pending')
+        
+        logger.info(f"📊 [DELTA] Added: {len(added)}, Modified: {len(modified)}, Deleted: {len(deleted)}")
+        
+        # TODO: Implement actual persistence logic (database, file storage, etc.)
+        # For now, just validate and acknowledge
+        
+        # Validate structure
+        for ann in added + modified:
+            if not all(k in ann for k in ['id', 'label', 'score', 'bbox']):
+                raise ValueError(f"Invalid annotation structure: {ann}")
+        
+        # Simulate save operation
+        save_id = uuid.uuid4().hex
+        
+        return {
+            "status": "success",
+            "save_id": save_id,
+            "added_count": len(added),
+            "modified_count": len(modified),
+            "deleted_count": len(deleted),
+            "verification_status": verification_status,
+            "timestamp": time.time()
+        }
+        
+    except ValueError as e:
+        logger.error(f"❌ [API] Validation Error: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"❌ [API] Save Error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))

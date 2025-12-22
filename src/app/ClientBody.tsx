@@ -83,14 +83,15 @@ export default function ClientBody({
     initializeProduction();
   }, []);
 
-  // Check if current route is a public auth route
+  // Check if current route is a public auth route or full-screen route
   const isAuthRoute = pathname?.startsWith('/auth/');
+  const isFullScreenRoute = pathname?.startsWith('/infinite-workspace');
 
   return (
     <div className="antialiased">
       <AuthGuard>
-        {isAuthRoute ? (
-          // Don't wrap auth pages with AppLayout
+        {isAuthRoute || isFullScreenRoute ? (
+          // Don't wrap auth pages or full-screen pages with AppLayout
           children
         ) : (
           // Wrap main app with AppLayout

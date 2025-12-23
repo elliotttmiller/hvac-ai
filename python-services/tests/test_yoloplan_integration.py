@@ -258,7 +258,7 @@ class TestConnectivityAnalyzer(unittest.TestCase):
                 id=3,
                 symbol_type='diffuser',
                 category=SymbolCategory.DIFFUSER,
-                bbox=(280, 200), 320, 240),
+                bbox=(280, 200, 320, 240),
                 confidence=0.8,
                 center=(300, 220)
             ),

@@ -6,6 +6,166 @@ This document outlines the future enhancement plan for the HVAC AI Document Proc
 
 ## Enhancement Categories
 
+### 0. YOLOplan Integration (NEW - High Priority)
+
+**Source**: https://github.com/DynMEP/YOLOplan
+
+YOLOplan is an open-source project by DynMEP that automates symbol detection and counting in MEP (Mechanical, Electrical, Plumbing) technical drawings. This enhancement integrates YOLOplan's specialized capabilities into the HVAC AI platform.
+
+**Objective**: Add specialized MEP symbol detection, quantity takeoff, and BOM generation.
+
+**Timeline**: 16 weeks (4 months)
+
+**Implementation Plan**:
+
+#### Week 1-2: Analysis and Evaluation
+- Clone and evaluate YOLOplan repository
+- Test pre-trained models on HVAC drawings
+- Design integration architecture
+- Assess licensing and compatibility
+
+#### Week 3-6: Core Integration
+```python
+class YOLOplanDetector:
+    """
+    YOLOplan-based symbol detector for MEP drawings
+    
+    Features:
+    - HVAC equipment symbol detection
+    - Electrical symbol detection
+    - Plumbing fixture detection
+    - Custom symbol detection
+    """
+    
+    def detect_symbols(self, image, confidence=0.5):
+        """Detect MEP symbols in drawing"""
+        results = self.model.predict(image, conf=confidence)
+        detections = self._parse_detections(results)
+        counts = self._count_symbols(detections)
+        netlist = self._generate_netlist(detections)
+        
+        return {
+            'detections': detections,
+            'counts': counts,
+            'netlist': netlist
+        }
+    
+    def batch_detect(self, images):
+        """Batch detection for multiple drawings"""
+        return [self.detect_symbols(img) for img in images]
+```
+
+#### Week 7-10: Custom Training
+- Collect HVAC symbol dataset (1,000+ images)
+- Annotate symbols in YOLO format
+- Train custom YOLO11 models
+- Validate on real HVAC drawings
+
+**Expected Dataset:**
+- Equipment: AHU, fan, damper, VAV, FCU, chiller, boiler (20+ types)
+- Duct/pipe symbols: Supply, return, exhaust, ventilation
+- Sensors: Temperature, pressure, flow, CO2
+- Controls: Actuators, controllers, thermostats
+- Minimum 1,000 annotated images, 50+ symbol classes
+
+#### Week 11-14: Advanced Features
+
+**Connectivity Analysis:**
+```python
+class ConnectivityAnalyzer:
+    """Generate netlist for HVAC systems"""
+    
+    def generate_netlist(self, symbols, connections):
+        """
+        Build system connectivity graph
+        
+        Returns:
+        - Connection graph (equipment → ducts → zones)
+        - System hierarchy (supply → distribution → terminal)
+        - Zone assignments
+        """
+        pass
+```
+
+**BOM Generation:**
+```python
+class BOMGenerator:
+    """Bill of Materials from symbol counts"""
+    
+    def generate_bom(self, symbol_counts):
+        """
+        Generate BOM with:
+        - Item descriptions
+        - Quantities
+        - Specifications
+        - Cost estimates (optional)
+        """
+        pass
+```
+
+**Batch Processing:**
+```python
+class BatchProcessor:
+    """Process multiple drawings in parallel"""
+    
+    def process_batch(self, drawing_paths, output_dir):
+        """
+        Batch process with:
+        - Parallel processing
+        - Progress tracking
+        - Consolidated reporting
+        - CSV/Excel export
+        """
+        pass
+```
+
+#### Week 15-16: UI Integration
+- Symbol detection toggle in frontend
+- Symbol counts display panel
+- BOM generation and export
+- Connectivity visualization
+- Batch upload interface
+
+**Expected Improvements:**
+- Symbol detection accuracy: 95%+
+- Processing speed: <2s per drawing
+- Batch throughput: 50+ drawings/hour
+- Time savings: 70%+ vs. manual takeoff
+
+**Benefits:**
+1. **Automated Quantity Takeoff** - No manual counting
+2. **BOM Generation** - Export to estimating tools
+3. **Connectivity Analysis** - System validation and netlist
+4. **Batch Processing** - Handle large project sets
+5. **Standards Compliance** - Symbol standardization
+
+**Integration with Existing System:**
+```python
+class IntegratedHVACDetector:
+    def __init__(self):
+        self.yoloplan = YOLOplanDetector()      # Symbol detection
+        self.sahi = HVACDetector()               # Component detection
+        self.doc_processor = EnhancedProcessor() # Text extraction
+        
+    def analyze_blueprint(self, image):
+        """
+        Complete analysis combining:
+        - Document processing (text, metadata)
+        - Symbol detection (YOLOplan)
+        - Component detection (SAHI)
+        - Result fusion and validation
+        """
+        doc = self.doc_processor.process(image)
+        symbols = self.yoloplan.detect_symbols(image)
+        components = self.sahi.detect_with_sahi(image)
+        
+        return merge_results(doc, symbols, components)
+```
+
+**See**: `docs/YOLOPLAN_INTEGRATION.md` for complete integration plan.
+
+---
+
 ### 1. Advanced VLM Integration
 
 #### 1.1 Fine-tune VLM on HVAC-Specific Blueprints
@@ -854,6 +1014,15 @@ class DomainAdapter:
 ---
 
 ## Implementation Priority
+
+### Phase 0 (Next 4 months) - HIGHEST PRIORITY
+**YOLOplan Integration**
+- Immediate business value for MEP contractors
+- Automated symbol counting and BOM generation
+- Competitive differentiator
+- Builds on existing YOLO expertise
+- **Timeline**: 16 weeks
+- **Resources**: 1-2 ML engineers, GPU for training
 
 ### Phase 1 (Next 6 months) - HIGH PRIORITY
 1. **Table Extraction** (Months 1-3)

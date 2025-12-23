@@ -278,6 +278,12 @@ class SemanticValidator:
     Uses semantic understanding to resolve conflicts and improve accuracy
     """
     
+    # Validation scoring weights
+    BASE_VALIDATION_SCORE = 0.5
+    TEXT_IN_VLM_BOOST = 0.3
+    ENTITY_MATCH_BOOST = 0.2
+    VALIDATION_THRESHOLD = 0.6
+    
     def __init__(self, confidence_threshold: float = 0.6):
         self.confidence_threshold = confidence_threshold
     
@@ -320,11 +326,11 @@ class SemanticValidator:
         ]
         
         # Compute validation score
-        validation_score = 0.5  # Base score
+        validation_score = self.BASE_VALIDATION_SCORE
         if text_in_vlm:
-            validation_score += 0.3
+            validation_score += self.TEXT_IN_VLM_BOOST
         if matching_entities:
-            validation_score += 0.2
+            validation_score += self.ENTITY_MATCH_BOOST
         
         # Combine confidences
         combined_confidence = (ocr.confidence + vlm.confidence * validation_score) / 2
@@ -333,7 +339,7 @@ class SemanticValidator:
             text=ocr.text,
             bbox=ocr.bbox,
             confidence=combined_confidence,
-            validated=validation_score > 0.6,
+            validated=validation_score > self.VALIDATION_THRESHOLD,
             entities=matching_entities,
             context=vlm.context,
             sources=["ocr", "vlm"]

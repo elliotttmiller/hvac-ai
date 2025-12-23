@@ -61,9 +61,16 @@ class QualityAssessment:
     Based on: Engineering Drawing Processing research
     """
     
+    # Quality thresholds
+    MIN_RESOLUTION = 300  # DPI
+    BLUR_THRESHOLD = 100
+    LOW_CONTRAST_THRESHOLD = 30
+    BLUR_NORMALIZATION_FACTOR = 200
+    CONTRAST_NORMALIZATION_FACTOR = 100
+    
     def __init__(self):
-        self.min_resolution = 300  # DPI
-        self.blur_threshold = 100
+        self.min_resolution = self.MIN_RESOLUTION
+        self.blur_threshold = self.BLUR_THRESHOLD
         
     def assess(self, image: np.ndarray) -> Dict[str, Any]:
         """
@@ -87,7 +94,7 @@ class QualityAssessment:
         
         # Check contrast
         contrast = gray.std()
-        is_low_contrast = contrast < 30
+        is_low_contrast = contrast < self.LOW_CONTRAST_THRESHOLD
         
         # Estimate DPI (rough approximation)
         estimated_dpi = int(np.sqrt(area) / 10)
@@ -105,8 +112,8 @@ class QualityAssessment:
     
     def _compute_quality_score(self, blur: float, contrast: float) -> float:
         """Compute overall quality score (0-1)"""
-        blur_normalized = min(blur / 200, 1.0)
-        contrast_normalized = min(contrast / 100, 1.0)
+        blur_normalized = min(blur / self.BLUR_NORMALIZATION_FACTOR, 1.0)
+        contrast_normalized = min(contrast / self.CONTRAST_NORMALIZATION_FACTOR, 1.0)
         return (blur_normalized + contrast_normalized) / 2
 
 
@@ -164,8 +171,10 @@ class LayoutSegmenter:
     Detects and segments document regions for specialized processing
     """
     
-    def __init__(self):
-        self.min_region_area = 1000
+    MIN_REGION_AREA = 1000  # Default minimum region area in pixels
+    
+    def __init__(self, min_region_area: int = MIN_REGION_AREA):
+        self.min_region_area = min_region_area
         
     def segment(self, image: np.ndarray) -> List[DocumentRegion]:
         """
@@ -368,7 +377,7 @@ class SemanticCache:
         self.similarity_threshold = similarity_threshold
         
     def _compute_hash(self, image: np.ndarray) -> str:
-        """Compute perceptual hash for image"""
+        """Compute perceptual hash for image using SHA-256"""
         # Resize to standard size
         small = cv2.resize(image, (64, 64))
         
@@ -376,8 +385,8 @@ class SemanticCache:
         if len(small.shape) == 3:
             small = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
         
-        # Compute hash
-        hash_bytes = hashlib.md5(small.tobytes()).hexdigest()
+        # Compute hash using SHA-256 (more secure than MD5)
+        hash_bytes = hashlib.sha256(small.tobytes()).hexdigest()
         
         return hash_bytes
     

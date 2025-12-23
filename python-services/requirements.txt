@@ -11,7 +11,7 @@ pydantic>=2.0.0
 # =============================================================================
 torch>=2.0.0
 torchvision>=0.15.0
-ultralytics>=8.0.0  # YOLO for object detection
+ultralytics>=8.0.0  # YOLO for object detection (YOLOv8, YOLO11)
 transformers>=4.35.0  # Updated for Qwen2-VL support
 diffusers>=0.21.0
 accelerate>=0.24.0  # Updated for VLM training
@@ -25,6 +25,9 @@ git+https://github.com/facebookresearch/segment-anything.git@6fdee8f2727f4506cfb
 
 # SAHI - Slicing Aided Hyper Inference for HVAC component detection
 sahi>=0.11.0
+
+# NetworkX for connectivity analysis (YOLOplan integration)
+networkx>=3.1
 
 # =============================================================================
 # Image Processing and Computer Vision

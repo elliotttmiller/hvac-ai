@@ -44,6 +44,7 @@ cd python-services && python hvac_analysis_service.py  # Backend (port 8000)
 
 ### Quick Links
 - [Getting Started](docs/GETTING_STARTED.md) - Setup and installation
+- **[Deep-Zoom Viewport](docs/DEEP_ZOOM_VIEWPORT.md)** - 🆕 Google Maps-style blueprint navigation
 - **[HVAC Refactoring Guide](docs/HVAC_REFACTORING_GUIDE.md)** - New HVAC-specialized architecture
 - [Troubleshooting](docs/TROUBLESHOOTING.md) - Fix common issues with uploads and analysis
 - [Inference Deployment (YOLO/Ultralytics)](docs/SAM_DEPLOYMENT.md) - Deploy inference model features

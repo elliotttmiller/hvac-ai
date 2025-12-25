@@ -610,7 +610,7 @@ class HVACAnnotationPipeline:
             img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             img_h, img_w = img.shape[:2]
             
-            # Read annotations to get container IDs
+            # Read annotations to get container IDs and build container list
             yaml_path = Path(self.temp_dir) / "download" / "data.yaml"
             with open(yaml_path, 'r') as f:
                 config = yaml.safe_load(f)
@@ -620,34 +620,57 @@ class HVACAnnotationPipeline:
             class_map = {name: i for i, name in enumerate(names)}
             container_ids = [class_map[c] for c in self.containers if c in class_map]
             
+            # Parse all annotations first to match container analysis
+            annotations = []
+            with open(label_file, 'r') as f:
+                for line in f:
+                    parts = line.strip().split()
+                    if len(parts) >= 5:
+                        annotations.append({
+                            'class_id': int(float(parts[0])),
+                            'xc': float(parts[1]),
+                            'yc': float(parts[2]),
+                            'w': float(parts[3]),
+                            'h': float(parts[4])
+                        })
+            
+            # Create mapping between container annotations and their analysis
+            container_annotations = [ann for ann in annotations if ann['class_id'] in container_ids]
+            
             # Create figure
             fig, ax = plt.subplots(1, figsize=(12, 8))
             ax.imshow(img)
             
-            # Plot annotations
-            container_idx = 0
-            with open(label_file, 'r') as f:
-                for line in f:
-                    parts = line.strip().split()
-                    if len(parts) < 5:
-                        continue
+            # Plot all annotations
+            for ann in annotations:
+                class_id = ann['class_id']
+                xc, yc, w, h = ann['xc'], ann['yc'], ann['w'], ann['h']
+                
+                # Convert to pixel coordinates
+                x_pixel = xc * img_w
+                y_pixel = yc * img_h
+                w_pixel = w * img_w
+                h_pixel = h * img_h
+                
+                x1 = x_pixel - w_pixel/2
+                y1 = y_pixel - h_pixel/2
+                
+                # Check if this is a container and get its status
+                color = 'gray'
+                status = names[class_id] if class_id < len(names) else f'Class {class_id}'
+                
+                if class_id in container_ids:
+                    # Find this container in our container list
+                    container_idx = None
+                    for idx, cont_ann in enumerate(container_annotations):
+                        if (cont_ann['class_id'] == class_id and 
+                            abs(cont_ann['xc'] - xc) < 0.001 and 
+                            abs(cont_ann['yc'] - yc) < 0.001):
+                            container_idx = idx
+                            break
                     
-                    class_id = int(float(parts[0]))
-                    xc, yc, w, h = map(float, parts[1:])
-                    
-                    # Convert to pixel coordinates
-                    x_pixel = xc * img_w
-                    y_pixel = yc * img_h
-                    w_pixel = w * img_w
-                    h_pixel = h * img_h
-                    
-                    x1 = x_pixel - w_pixel/2
-                    y1 = y_pixel - h_pixel/2
-                    
-                    # Check if this is a container and get its status
-                    if class_id in container_ids and container_idx < len(container_analysis):
+                    if container_idx is not None and container_idx < len(container_analysis):
                         container_status = container_analysis[container_idx]
-                        container_idx += 1
                         
                         if container_status['is_complete']:
                             color = 'green'
@@ -660,14 +683,11 @@ class HVACAnnotationPipeline:
                             if not container_status['has_tag_number']:
                                 missing.append('tag_number')
                             status = f"MISSING: {', '.join(missing)}"
-                    else:
-                        color = 'gray'
-                        status = names[class_id] if class_id < len(names) else f'Class {class_id}'
-                    
-                    rect = Rectangle((x1, y1), w_pixel, h_pixel, fill=False, edgecolor=color, linewidth=2)
-                    ax.add_patch(rect)
-                    ax.text(x1 + 5, y1 + 15, f'{status}', 
-                           color='black', fontsize=8, bbox=dict(facecolor='white', alpha=0.7))
+                
+                rect = Rectangle((x1, y1), w_pixel, h_pixel, fill=False, edgecolor=color, linewidth=2)
+                ax.add_patch(rect)
+                ax.text(x1 + 5, y1 + 15, f'{status}', 
+                       color='black', fontsize=8, bbox=dict(facecolor='white', alpha=0.7))
             
             ax.set_title(f'DELETED IMAGE: {label_file.stem}\nMode: {self.sanitation_mode.upper()}', 
                         color='red', fontweight='bold')

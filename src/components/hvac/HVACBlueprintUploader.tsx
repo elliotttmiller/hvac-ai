@@ -45,13 +45,34 @@ export default function HVACBlueprintUploader({ onAnalysisComplete }: HVACBluepr
   const [projectId, setProjectId] = useState('');
   const [location, setLocation] = useState('');
 
-  const onDrop = useCallback((acceptedFiles: File[]) => {
+  const onDrop = useCallback((acceptedFiles: File[], rejectedFiles: any[]) => {
+    // Handle rejected files first
+    if (rejectedFiles && rejectedFiles.length > 0) {
+      const rejection = rejectedFiles[0];
+      if (rejection.errors && rejection.errors.length > 0) {
+        setError(rejection.errors[0].message);
+      } else {
+        setError('File was rejected. Please check file type and size.');
+      }
+      return;
+    }
+    
     if (acceptedFiles.length > 0) {
       const file = acceptedFiles[0];
+      
+      // Validate file size
       if (file.size > 500 * 1024 * 1024) {
         setError('File size must be less than 500MB');
         return;
       }
+      
+      // Validate file type
+      const validTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/tiff', 'application/pdf'];
+      if (!validTypes.includes(file.type) && !file.name.match(/\.(png|jpg|jpeg|tiff|pdf|dwg|dxf)$/i)) {
+        setError('Please upload a valid blueprint file (PNG, JPG, TIFF, PDF, DWG, or DXF)');
+        return;
+      }
+      
       setUploadedFile({ file });
       setError(null);
       setResult(null);
@@ -61,14 +82,23 @@ export default function HVACBlueprintUploader({ onAnalysisComplete }: HVACBluepr
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     maxFiles: 1,
-    multiple: false
+    multiple: false,
+    accept: {
+      'image/png': ['.png'],
+      'image/jpeg': ['.jpg', '.jpeg'],
+      'image/tiff': ['.tiff', '.tif'],
+      'application/pdf': ['.pdf'],
+      'application/octet-stream': ['.dwg', '.dxf'],
+    },
   });
 
   const handleAnalyze = async () => {
     if (!uploadedFile) return;
+    
     setAnalyzing(true);
     setError(null);
     setProgress(10);
+    
     try {
       const formData = new FormData();
       formData.append('file', uploadedFile.file);
@@ -79,6 +109,7 @@ export default function HVACBlueprintUploader({ onAnalysisComplete }: HVACBluepr
       // SSE by setting Accept and adding ?stream=1 so the proxy forwards
       // to the Python streaming endpoint.
       setProgress(20);
+      
       const response = await fetch('/api/hvac/analyze?stream=1', {
         method: 'POST',
         body: formData,
@@ -88,10 +119,21 @@ export default function HVACBlueprintUploader({ onAnalysisComplete }: HVACBluepr
         }
       });
 
-      if (!response.ok || !response.body) {
-        // Fallback to non-streaming JSON path
-        const fallback = await response.json().catch(() => null);
-        throw new Error(fallback?.error || 'Analysis failed');
+      if (!response.ok) {
+        // Try to parse error message from response
+        let errorMessage = 'Analysis failed';
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.error || errorData.detail || errorMessage;
+        } catch {
+          // If JSON parsing fails, use status text
+          errorMessage = response.statusText || errorMessage;
+        }
+        throw new Error(errorMessage);
+      }
+      
+      if (!response.body) {
+        throw new Error('No response body received from server');
       }
 
       // Stream parser
@@ -142,11 +184,24 @@ export default function HVACBlueprintUploader({ onAnalysisComplete }: HVACBluepr
       // Ensure reading complete
       setProgress(100);
     } catch (err: unknown) {
+      console.error('Analysis error:', err);
+      
+      let errorMessage = 'Failed to analyze blueprint';
+      
       if (err instanceof Error) {
-        setError(err.message || 'Failed to analyze blueprint');
-      } else {
-        setError('Failed to analyze blueprint');
+        errorMessage = err.message;
+        
+        // Provide more helpful messages for common errors
+        if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
+          errorMessage = 'Cannot connect to analysis server. Please ensure the backend service is running.';
+        } else if (err.message.includes('503')) {
+          errorMessage = 'Analysis service unavailable. The AI model may not be loaded. Check server logs.';
+        } else if (err.message.includes('timeout')) {
+          errorMessage = 'Analysis timed out. Please try with a smaller file or try again later.';
+        }
       }
+      
+      setError(errorMessage);
     } finally {
       setAnalyzing(false);
     }

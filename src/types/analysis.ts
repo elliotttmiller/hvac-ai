@@ -1,30 +1,19 @@
 /**
- * @deprecated RLE-based masks (COCO RLE) are deprecated in this project.
- * The platform now prefers vector polygon coordinates (see `Segment.polygon`).
- *
- * Migration: backend services return `segments[].polygon` (vector coordinates)
- * and `segments[].mask` (RLE) will be removed in a future release. If
- * you still need RLE, encode polygons to RLE on-demand server-side using
- * an optional dependency such as `pycocotools`.
+ * Object detection results using bounding boxes.
+ * The platform uses YOLOv11 object detection model with bounding box outputs.
+ * 
+ * Note: Polygon and mask fields are deprecated and kept for backward compatibility.
+ * New implementations should only use bbox for object detection.
  */
-export interface RLEMask {
-  /** Size as [height, width] */
-  size: [number, number];
-  /** COCO RLE counts (may be bytes or a string depending on encoder) */
-  counts: string;
-}
 
 export interface Segment {
   label: string;
   score: number;
-  // Legacy RLE mask (optional). New pipeline prefers vector polygons.
-  mask?: RLEMask;
-  bbox: number[];
-  // Optional polygon coordinates. Can be a single polygon (array of [x,y])
-  // or multiple polygons ([[[x,y], ...], [[x,y], ...]]).
-  polygon?: number[][] | number[][][];
-  // Optional PNG (base64) representation of the mask produced server-side
-  mask_png?: string;
+  bbox: number[]; // [x1, y1, x2, y2] bounding box coordinates
+  // Deprecated fields (kept for backward compatibility)
+  mask?: never;
+  polygon?: never;
+  mask_png?: never;
 }
 
 export interface CountResult {

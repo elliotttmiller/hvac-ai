@@ -225,7 +225,7 @@ export default function HVACBlueprintUploader({ onAnalysisComplete }: HVACBluepr
     return (typeof secs === 'number') ? secs.toFixed(decimals) : (0).toFixed(decimals);
   };
 
-  // Normalize analysis result to prefer polygon masks for display when available.
+  // Normalize analysis result for bounding box display
   /* eslint-disable @typescript-eslint/no-explicit-any */
   const normalizeAnalysisResult = (r: any): AnalysisResult => {
     if (!r) return r;
@@ -233,17 +233,9 @@ export default function HVACBlueprintUploader({ onAnalysisComplete }: HVACBluepr
     if (Array.isArray(r.segments)) {
       normalized.segments = r.segments.map((s: any) => {
         const seg = { ...s } as any;
-        // Prefer polygon if available, otherwise rle or mask
-        if (seg.polygon) {
-          seg.displayFormat = 'polygon';
-          seg.displayMask = seg.polygon;
-        } else if (seg.rle || seg.mask) {
-          seg.displayFormat = 'rle';
-          seg.displayMask = seg.rle || seg.mask;
-        } else {
-          seg.displayFormat = 'bbox';
-          seg.displayMask = null;
-        }
+        // Object detection mode - use bounding boxes only
+        seg.displayFormat = 'bbox';
+        seg.displayMask = null;
         return seg as Segment;
       });
     }

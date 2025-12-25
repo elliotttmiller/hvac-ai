@@ -2,13 +2,12 @@
 
 **Revolutionary AI-Powered HVAC Blueprint Analysis Platform**
 
-An enterprise-grade platform combining Next.js frontend with Python AI services for intelligent HVAC system analysis. Now featuring SAHI (Slice Aided Hyper Inference) for improved accuracy on large blueprints and HVAC-specific validation based on ASHRAE/SMACNA standards.
+An enterprise-grade platform combining Next.js frontend with Python AI services for intelligent HVAC system analysis using YOLOv11 object detection with bounding boxes.
 
 ## Features
 
 ### Core Capabilities
-- 🤖 **SAHI-Powered Detection** - Slice-based inference for 90%+ accuracy on all blueprint sizes
-- 🧠 **Vision-Language Model (VLM)** - Domain-specific AI for pristine HVAC analysis precision
+- 🤖 **YOLOv11 Object Detection** - Fast and accurate bounding box detection for HVAC components
 - 📝 **Hybrid OCR + VLM** - 🆕 Advanced document processing with 92%+ accuracy (research-driven)
 - 🔄 **Semantic Caching** - 🆕 70% faster processing for similar blueprints
 - 🔍 **HVAC System Analysis** - Relationship graphs and connectivity validation
@@ -18,11 +17,10 @@ An enterprise-grade platform combining Next.js frontend with Python AI services 
 - 🎯 **Domain Expertise** - HVAC-specific prompt engineering templates
 
 ### Technical Highlights
-- Linear scaling with blueprint size (handles 10,000px+ blueprints)
+- Fast bounding box detection optimized for HVAC components
 - GPU memory efficient (<8GB for large blueprints)
-- Hybrid OCR + VLM pipeline with multi-model validation
+- Real-time inference with streaming progress updates
 - Rotation-invariant text detection for engineering drawings
-- Layout-aware segmentation and region-specific processing
 - Component relationship analysis with engineering constraints
 - Professional prompt templates based on industry standards
 - Comprehensive testing framework (85%+ coverage target)

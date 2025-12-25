@@ -1,21 +1,15 @@
 """
-YOLO11 Inference Module (Text Rejection Tuned)
-Adds aspect-ratio filtering to remove text labels detected as valves.
+YOLO11 Object Detection Module (Bounding Box Detection)
+Performs object detection with bounding boxes for HVAC components.
+Includes text rejection filtering based on aspect ratio.
 """
 
 import logging
 import time
 import numpy as np
 import torch
-import cv2
 from typing import Dict, List, Any, Optional
 from ultralytics import YOLO
-
-try:
-    from pycocotools import mask as mask_utils
-    HAS_COCO = True
-except ImportError:
-    HAS_COCO = False
 
 logger = logging.getLogger(__name__)
 
@@ -49,30 +43,7 @@ class YOLOInferenceEngine:
             logger.error(f"❌ Failed to load YOLO model: {e}", exc_info=True)
             raise RuntimeError(f"Could not initialize YOLO model: {str(e)}")
 
-    def _polygon_to_rle(self, polygon: np.ndarray, height: int, width: int) -> Optional[Dict]:
-        """Convert polygon mask to RLE format for efficient storage.
-        
-        Args:
-            polygon: Numpy array of polygon points
-            height: Image height
-            width: Image width
-            
-        Returns:
-            RLE encoded mask dictionary or None if conversion fails
-        """
-        if not HAS_COCO or len(polygon) == 0:
-            return None
-        
-        try:
-            mask = np.zeros((height, width), dtype=np.uint8)
-            pts = polygon.astype(np.int32).reshape((-1, 1, 2))
-            cv2.fillPoly(mask, [pts], 1)
-            rle = mask_utils.encode(np.asfortranarray(mask))
-            rle['counts'] = rle['counts'].decode('utf-8')
-            return rle
-        except Exception as e:
-            logger.warning(f"Failed to convert polygon to RLE: {e}")
-            return None
+
 
     def predict(self, image: np.ndarray, conf_threshold: float = 0.50, progress_callback: Optional[callable] = None) -> Dict[str, Any]:
         """Perform inference on an image.
@@ -112,7 +83,6 @@ class YOLOInferenceEngine:
             image, 
             conf=0.25, 
             iou=0.45, 
-            retina_masks=True,
             verbose=False
         )[0]
 
@@ -160,19 +130,6 @@ class YOLOInferenceEngine:
 
             # --- DATA EXTRACTION ---
             bbox = [x1, y1, x2, y2]
-            polygon_list = []
-            rle_mask = None
-            
-            # Extract mask data if available
-            if results.masks is not None and i < len(results.masks.xy):
-                try:
-                    raw_poly = results.masks.xy[i]
-                    polygon_list = raw_poly.tolist()
-                    # Only create RLE if polygon is valid
-                    if len(polygon_list) > 0:
-                        rle_mask = self._polygon_to_rle(raw_poly, orig_h, orig_w)
-                except Exception as e:
-                    logger.warning(f"Failed to extract mask for detection {i}: {e}")
 
             class_counts[class_name] = class_counts.get(class_name, 0) + 1
 
@@ -181,8 +138,6 @@ class YOLOInferenceEngine:
                 "label": class_name,
                 "score": confidence,
                 "bbox": bbox,
-                "polygon": polygon_list,
-                "mask": rle_mask,
             })
 
         logger.info(f"🗑️ [FILTERS] Removed: {skipped_huge} Huge | {skipped_text} Text/Wide | {skipped_conf} Low Conf")

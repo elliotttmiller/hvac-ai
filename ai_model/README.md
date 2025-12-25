@@ -37,32 +37,59 @@ ai_model/
 
 3. **Run all cells** and monitor training progress
 
+### For Inference Deployment (New! 🎉)
+
+1. **Choose your notebook:**
+   - **Quick Start**: `notebooks/hvac-inference_yolo.ipynb` (5 min setup)
+   - **Production**: `notebooks/hvac-inference_yolo_enhanced.ipynb` (15 min with validation)
+
+2. **Setup requirements:**
+   - Set Colab runtime to GPU
+   - Have trained model in Google Drive
+   - Get ngrok token from [ngrok.com](https://ngrok.com/)
+
+3. **Deploy:** Follow the notebook steps
+
+4. **Documentation:** See [INFERENCE_NOTEBOOK_GUIDE.md](notebooks/INFERENCE_NOTEBOOK_GUIDE.md)
+
 ### Expected Results
 
-With default configuration (1000 images, 100 epochs):
+**Training** (1000 images, 100 epochs):
 - **Training Time**: ~4 hours on T4 GPU
 - **mAP50**: 0.85-0.90
 - **mAP50-95**: 0.65-0.75
 - **Inference Speed**: 30 FPS on T4
 
+**Inference** (T4 GPU, 1024px):
+- **Startup**: 30-40 seconds
+- **Inference**: 40-60ms per image (~20-25 FPS)
+- **Memory**: 2-3 GB GPU
+
 ## 📚 Documentation
 
 ### Essential Reading
 
-1. **[TRAINING_GUIDE.md](TRAINING_GUIDE.md)** - Start here!
+1. **[TRAINING_GUIDE.md](TRAINING_GUIDE.md)** - Start here for training!
    - Quick start instructions
    - Pipeline architecture
    - Training configuration
    - Monitoring and evaluation
    - Troubleshooting
 
-2. **[OPTIMIZATION_GUIDE.md](OPTIMIZATION_GUIDE.md)** - For advanced users
+2. **[INFERENCE_NOTEBOOK_GUIDE.md](notebooks/INFERENCE_NOTEBOOK_GUIDE.md)** - 🆕 For deployment!
+   - Comprehensive inference deployment guide
+   - Notebook comparison and recommendations
+   - Production deployment checklist
+   - Performance tuning and monitoring
+   - Troubleshooting and best practices
+
+3. **[OPTIMIZATION_GUIDE.md](OPTIMIZATION_GUIDE.md)** - For advanced users
    - Performance optimization
    - Hyperparameter tuning
    - Hardware-specific configs
    - Advanced techniques
 
-3. **[PIPELINE_COMPARISON.md](notebooks/PIPELINE_COMPARISON.md)** - Compare pipelines
+4. **[PIPELINE_COMPARISON.md](notebooks/PIPELINE_COMPARISON.md)** - Compare pipelines
    - Feature comparison
    - Performance benchmarks
    - Migration guide
@@ -73,10 +100,15 @@ With default configuration (1000 images, 100 epochs):
 
 | Notebook | Purpose | Recommended |
 |----------|---------|-------------|
+| **Training** | | |
 | `YOLOplan_pipeline_optimized.ipynb` | Production training with monitoring | ✅ Yes |
 | `YOLOplan_pipeline.ipynb` | Original baseline | ⚠️ Legacy |
 | `auto_labeling_pipeline.ipynb` | Auto-generate polygon annotations | ✅ Yes |
-| `hvac_inference_yolo.ipynb` | Test trained models | ✅ Yes |
+| **Inference** | | |
+| `hvac-inference_yolo_enhanced.ipynb` | 🆕 Production-ready inference server | ✅ **Recommended** |
+| `hvac-inference_yolo.ipynb` | Quick start inference deployment | ✅ Yes |
+
+> **New!** See [INFERENCE_NOTEBOOK_GUIDE.md](notebooks/INFERENCE_NOTEBOOK_GUIDE.md) for comprehensive inference deployment documentation.
 
 #### Training Configurations
 

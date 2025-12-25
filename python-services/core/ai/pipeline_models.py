@@ -4,7 +4,7 @@ Defines strict, serializable data structures for all pipeline stages.
 """
 
 from typing import List, Dict, Optional, Any, Tuple
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 from enum import Enum
 import time
 
@@ -49,8 +49,8 @@ class DetectionResult(BaseModel):
     image_height: int = Field(gt=0, description="Input image height")
     model_version: str = Field(description="YOLO model version")
     
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "detections": [
                     {
@@ -70,6 +70,7 @@ class DetectionResult(BaseModel):
                 "model_version": "yolo11m-obb"
             }
         }
+    )
 
 
 class TextRecognitionResult(BaseModel):
@@ -82,8 +83,8 @@ class TextRecognitionResult(BaseModel):
         description="Metadata about preprocessing (padding, region size)"
     )
     
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "region": {
                     "x1": 205.0, "y1": 155.0, "x2": 280.0, "y2": 175.0,
@@ -98,6 +99,7 @@ class TextRecognitionResult(BaseModel):
                 }
             }
         }
+    )
 
 
 class HVACEquipmentType(str, Enum):
@@ -127,8 +129,8 @@ class HVACInterpretation(BaseModel):
         description="Spatially associated component"
     )
     
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "text": "VAV-101",
                 "equipment_type": "VAV",
@@ -142,6 +144,7 @@ class HVACInterpretation(BaseModel):
                 }
             }
         }
+    )
 
 
 class HVACInterpretationResult(BaseModel):
@@ -154,8 +157,8 @@ class HVACInterpretationResult(BaseModel):
     total_validated: int = Field(ge=0, description="Number of successfully validated patterns")
     total_failed: int = Field(ge=0, description="Number of failed validations")
     
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "interpretations": [
                     {
@@ -172,6 +175,7 @@ class HVACInterpretationResult(BaseModel):
                 "total_failed": 2
             }
         }
+    )
 
 
 class PipelineStage(str, Enum):
@@ -248,8 +252,8 @@ class HVACResult(BaseModel):
         """Check if pipeline had partial success."""
         return len(self.text_results) > 0 or self.detection_result is not None
     
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "request_id": "req_abc123",
                 "stage": "complete",
@@ -280,6 +284,7 @@ class HVACResult(BaseModel):
                 "timestamp": 1703525423.5
             }
         }
+    )
 
 
 class PipelineConfig(BaseModel):
@@ -321,8 +326,8 @@ class PipelineConfig(BaseModel):
     enable_caching: bool = Field(default=True, description="Enable result caching")
     cache_ttl_seconds: int = Field(default=3600, description="Cache TTL in seconds")
     
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "confidence_threshold": 0.7,
                 "ocr_min_size": 8,
@@ -331,3 +336,4 @@ class PipelineConfig(BaseModel):
                 "enable_gpu": True
             }
         }
+    )

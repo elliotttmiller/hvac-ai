@@ -39,6 +39,17 @@ import sys
 sys.path.append(str(PROJECT_ROOT))
 from core.ai.yolo_inference import create_yolo_engine
 
+# Try to import pipeline (may not be available if dependencies missing)
+try:
+    from core.ai.pipeline_api import router as pipeline_router, initialize_pipeline
+    from core.ai.pipeline_models import PipelineConfig
+    PIPELINE_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"⚠️  Pipeline not available: {e}")
+    logger.warning("   Install easyocr to enable full pipeline: pip install easyocr")
+    PIPELINE_AVAILABLE = False
+    pipeline_router = None
+
 # --- LIFESPAN ---
 ml_models = {}
 
@@ -57,6 +68,21 @@ async def lifespan(app: FastAPI):
             logger.info("🔄 Initializing YOLO inference engine...")
             ml_models["yolo_engine"] = create_yolo_engine(model_path=MODEL_PATH)
             logger.info("✅ Inference Engine Attached and Ready.")
+            
+            # Initialize end-to-end pipeline if available
+            if PIPELINE_AVAILABLE:
+                try:
+                    logger.info("🔄 Initializing HVAC End-to-End Pipeline...")
+                    pipeline_config = PipelineConfig(
+                        confidence_threshold=float(os.getenv("CONFIDENCE_THRESHOLD", "0.7")),
+                        max_processing_time_ms=float(os.getenv("MAX_PROCESSING_TIME", "25.0")),
+                        enable_gpu=os.getenv("GPU_ENABLED", "true").lower() == "true"
+                    )
+                    initialize_pipeline(MODEL_PATH, pipeline_config)
+                    logger.info("✅ HVAC Pipeline initialized successfully")
+                except Exception as e:
+                    logger.error(f"❌ Pipeline Init Failed: {e}", exc_info=True)
+                    logger.error("   The server will start but pipeline endpoints may not work")
         except Exception as e:
             logger.error(f"❌ Engine Init Failed: {e}", exc_info=True)
             logger.error("   The server will start but analysis endpoints will not work")
@@ -75,6 +101,13 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
 )
+
+# Include pipeline router if available
+if PIPELINE_AVAILABLE and pipeline_router is not None:
+    app.include_router(pipeline_router)
+    logger.info("✅ Pipeline router registered at /api/v1/pipeline")
+else:
+    logger.info("ℹ️  Pipeline router not available - install easyocr to enable")
 
 # --- ENDPOINTS ---
 @app.get("/health")

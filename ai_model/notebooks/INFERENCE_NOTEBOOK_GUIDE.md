@@ -10,10 +10,11 @@ This guide documents the YOLO11 inference notebooks available in this directory 
 **Use Case:** Fast deployment, simple setup, minimal code
 
 **Features:**
-- ✅ 4-cell simple workflow
+- ✅ 5-cell simple workflow
 - ✅ GPU validation
 - ✅ Error handling
 - ✅ Configuration validation
+- ✅ Path validation
 - ✅ Clear documentation
 
 **Best For:**
@@ -77,7 +78,7 @@ This guide documents the YOLO11 inference notebooks available in this directory 
 
 | Feature | Quick Start | Enhanced |
 |---------|-------------|----------|
-| **Cells** | 4 | 8 |
+| **Cells** | 5 | 7 |
 | **Setup Time** | 5 min | 10-15 min |
 | **GPU Validation** | ✅ Basic | ✅ Comprehensive |
 | **Dependency Check** | ✅ | ✅ |
@@ -85,6 +86,7 @@ This guide documents the YOLO11 inference notebooks available in this directory 
 | **Test Inference** | ❌ | ✅ |
 | **Benchmarking** | ❌ | ✅ |
 | **Visualization** | ❌ | ✅ |
+| **Path Validation** | ✅ | ✅ |
 | **Error Handling** | ✅ Basic | ✅ Comprehensive |
 | **Documentation** | ✅ Basic | ✅ Detailed |
 | **Monitoring** | ❌ | ✅ |

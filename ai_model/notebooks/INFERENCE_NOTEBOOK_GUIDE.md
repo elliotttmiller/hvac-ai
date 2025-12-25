@@ -9,8 +9,10 @@ This guide documents the YOLO11 inference notebooks available in this directory 
 ### 1. `hvac-inference_yolo.ipynb` - Quick Start (Improved)
 **Use Case:** Fast deployment, simple setup, minimal code
 
+**Structure:** 5 cells total (1 markdown header + 4 code cells)
+
 **Features:**
-- ✅ 5-cell simple workflow
+- ✅ Simple workflow (setup → mount → configure → deploy)
 - ✅ GPU validation
 - ✅ Error handling
 - ✅ Configuration validation
@@ -27,6 +29,8 @@ This guide documents the YOLO11 inference notebooks available in this directory 
 
 ### 2. `hvac-inference_yolo_enhanced.ipynb` - Production Ready (New)
 **Use Case:** Turn-key backend/inference deployment, comprehensive validation
+
+**Structure:** 7 cells total (1 markdown header + 6 code cells)
 
 **Features:**
 - ✅ Comprehensive environment validation (GPU, CUDA, dependencies)
@@ -78,7 +82,7 @@ This guide documents the YOLO11 inference notebooks available in this directory 
 
 | Feature | Quick Start | Enhanced |
 |---------|-------------|----------|
-| **Cells** | 5 | 7 |
+| **Total Cells** | 5 (1 markdown + 4 code) | 7 (1 markdown + 6 code) |
 | **Setup Time** | 5 min | 10-15 min |
 | **GPU Validation** | ✅ Basic | ✅ Comprehensive |
 | **Dependency Check** | ✅ | ✅ |

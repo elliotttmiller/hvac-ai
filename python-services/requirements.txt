@@ -11,7 +11,7 @@ pydantic>=2.0.0
 # =============================================================================
 torch>=2.0.0
 torchvision>=0.15.0
-ultralytics>=8.0.0  # YOLO for object detection (YOLOv8, YOLO11)
+ultralytics>=8.0.0  # YOLOv11 for object detection (bounding boxes)
 transformers>=4.35.0  # Updated for Qwen2-VL support
 diffusers>=0.21.0
 accelerate>=0.24.0  # Updated for VLM training
@@ -19,9 +19,6 @@ bitsandbytes>=0.41.0  # For quantization (int8/int4)
 peft>=0.7.0  # Parameter-Efficient Fine-Tuning (LoRA)
 sentencepiece>=0.1.99  # Tokenization for VLMs
 protobuf>=3.20.0  # For model serialization
-
-# Segment Anything Model (pinned to stable release)
-git+https://github.com/facebookresearch/segment-anything.git@6fdee8f2727f4506cfbbe553e23b895e27956588
 
 # SAHI - Slicing Aided Hyper Inference for HVAC component detection
 sahi>=0.11.0
@@ -32,13 +29,12 @@ networkx>=3.1
 # =============================================================================
 # Image Processing and Computer Vision
 # =============================================================================
-opencv-python>=4.8.0
+opencv-python>=4.8.0  # Basic image processing only (no mask operations)
 numpy>=1.24.0
 Pillow>=10.0.0
 scikit-image>=0.21.0
 matplotlib>=3.7.0
-# pycocotools removed: using polygon-first pipeline and client-side rasterization; if you
-# need COCO RLE utilities for legacy workflows, install pycocotools separately.
+# Note: pycocotools and SAM removed - using YOLOv11 object detection only
 
 # =============================================================================
 # Document Processing

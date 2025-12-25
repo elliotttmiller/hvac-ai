@@ -27,7 +27,7 @@ export function useAnnotationStore() {
   const editHistoryRef = useRef<AnnotationEdit[]>([]);
 
   /**
-   * Initialize annotations from segments (YOLO results)
+   * Initialize annotations from segments (YOLO object detection results)
    */
   const initializeFromSegments = useCallback((segments: Segment[]) => {
     const annotations = new Map<string, EditableAnnotation>();
@@ -41,7 +41,6 @@ export function useAnnotationStore() {
         label: seg.label,
         score: seg.score,
         bbox: [x1, y1, x2, y2],
-        polygon: seg.polygon as number[][] | undefined,
         isDirty: false,
         isNew: false,
       };

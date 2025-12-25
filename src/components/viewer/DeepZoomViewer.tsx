@@ -215,46 +215,17 @@ export default function DeepZoomViewer({
       // Skip if too small to render
       if (width < 2 || height < 2) continue;
 
-      // Render polygon if available, otherwise bbox
-      if (ann.polygon && lodLevel !== 'overview') {
-        ctx.beginPath();
-        const firstPoint = imageToCanvas(ann.polygon[0][0], ann.polygon[0][1]);
-        if (firstPoint) {
-          ctx.moveTo(firstPoint[0], firstPoint[1]);
-          for (let i = 1; i < ann.polygon.length; i++) {
-            const point = imageToCanvas(ann.polygon[i][0], ann.polygon[i][1]);
-            if (point) {
-              ctx.lineTo(point[0], point[1]);
-            }
-          }
-          ctx.closePath();
-
-          // Fill
-          if (shouldShowFill || isHovered || isSelected) {
-            ctx.globalAlpha = isSelected ? 0.4 : isHovered ? 0.35 : renderConfig.opacity;
-            ctx.fillStyle = color;
-            ctx.fill();
-            ctx.globalAlpha = 1.0;
-          }
-
-          // Stroke
-          ctx.lineWidth = isSelected ? 3 : isHovered ? 2.5 : 2;
-          ctx.strokeStyle = color;
-          ctx.stroke();
-        }
-      } else {
-        // Render bounding box
-        if (shouldShowFill || isHovered || isSelected) {
-          ctx.globalAlpha = isSelected ? 0.4 : isHovered ? 0.35 : renderConfig.opacity;
-          ctx.fillStyle = color;
-          ctx.fillRect(cx1, cy1, width, height);
-          ctx.globalAlpha = 1.0;
-        }
-
-        ctx.lineWidth = isSelected ? 3 : isHovered ? 2.5 : 2;
-        ctx.strokeStyle = color;
-        ctx.strokeRect(cx1, cy1, width, height);
+      // Render bounding box only (object detection mode)
+      if (shouldShowFill || isHovered || isSelected) {
+        ctx.globalAlpha = isSelected ? 0.4 : isHovered ? 0.35 : renderConfig.opacity;
+        ctx.fillStyle = color;
+        ctx.fillRect(cx1, cy1, width, height);
+        ctx.globalAlpha = 1.0;
       }
+
+      ctx.lineWidth = isSelected ? 3 : isHovered ? 2.5 : 2;
+      ctx.strokeStyle = color;
+      ctx.strokeRect(cx1, cy1, width, height);
 
       // Render label
       if (shouldShowLabels || isSelected || isHovered) {

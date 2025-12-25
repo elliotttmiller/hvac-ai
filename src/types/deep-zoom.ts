@@ -40,8 +40,7 @@ export interface EditableAnnotation {
   id: string;
   label: string;
   score: number;
-  bbox: [number, number, number, number]; // [x1, y1, x2, y2]
-  polygon?: number[][];
+  bbox: [number, number, number, number]; // [x1, y1, x2, y2] - object detection bounding box only
   isDirty: boolean;
   isNew: boolean;
 }

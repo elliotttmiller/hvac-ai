@@ -19,17 +19,22 @@ export async function POST(request: NextRequest) {
     if (!incomingFile) {
       return NextResponse.json({ error: 'No file provided' }, { status: 400 });
     }
+    
+    // Validate file size (max 500MB)
+    if (incomingFile.size > 500 * 1024 * 1024) {
+      return NextResponse.json({ error: 'File size exceeds 500MB limit' }, { status: 400 });
+    }
 
     // Build python form data
     const pythonFormData = new FormData();
     // Python service expects the file under the 'image' field
     pythonFormData.append('image', incomingFile);
 
-  let targetUrl = '';
+    let targetUrl = '';
 
-  // Detect whether the client requested a streaming response (SSE).
-  const { searchParams } = new URL(request.url);
-  const wantsStream = searchParams.get('stream') === '1' || (request.headers.get('accept') || '').includes('text/event-stream');
+    // Detect whether the client requested a streaming response (SSE).
+    const { searchParams } = new URL(request.url);
+    const wantsStream = searchParams.get('stream') === '1' || (request.headers.get('accept') || '').includes('text/event-stream');
 
     if (coords || prompt) {
       // Segment request — backend expects 'coords' as a string "x,y"
@@ -69,12 +74,48 @@ export async function POST(request: NextRequest) {
   // If the client asked for a streaming response, forward the upstream
   // streaming body directly to the caller (preserving content-type).
   if (wantsStream) {
-    const upstream = await fetch(`${PYTHON_SERVICE_URL}/api/v1/analyze/stream`, { method: 'POST', body: pythonFormData, headers: { 'ngrok-skip-browser-warning': '69420' } });
-    // Return the upstream body directly as a passthrough response.
-    return new Response(upstream.body, { status: upstream.status, headers: { 'content-type': upstream.headers.get('content-type') || 'text/event-stream' } });
+    try {
+      const upstream = await fetch(
+        `${PYTHON_SERVICE_URL}/api/v1/analyze/stream`, 
+        { 
+          method: 'POST', 
+          body: pythonFormData, 
+          headers: { 'ngrok-skip-browser-warning': '69420' },
+        }
+      );
+      
+      if (!upstream.ok) {
+        // Try to extract error from upstream
+        const errorText = await upstream.text().catch(() => 'Upstream service error');
+        return NextResponse.json(
+          { error: errorText }, 
+          { status: upstream.status }
+        );
+      }
+      
+      // Return the upstream body directly as a passthrough response.
+      return new Response(upstream.body, { 
+        status: upstream.status, 
+        headers: { 
+          'content-type': upstream.headers.get('content-type') || 'text/event-stream',
+          'cache-control': 'no-cache',
+          'connection': 'keep-alive',
+        } 
+      });
+    } catch (error) {
+      console.error('Streaming proxy error:', error);
+      return NextResponse.json(
+        { error: 'Failed to connect to analysis service' }, 
+        { status: 503 }
+      );
+    }
   }
 
-  const response = await fetch(targetUrl, { method: 'POST', body: pythonFormData, headers: { 'ngrok-skip-browser-warning': '69420' } });
+  const response = await fetch(targetUrl, { 
+    method: 'POST', 
+    body: pythonFormData, 
+    headers: { 'ngrok-skip-browser-warning': '69420' } 
+  });
 
   // Read response safely: some endpoints (or ngrok) may return HTML on error
   const contentType = response.headers.get('content-type') || '';

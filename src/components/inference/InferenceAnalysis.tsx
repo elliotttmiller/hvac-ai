@@ -75,7 +75,6 @@ export default function InferenceAnalysis({ initialImage, initialSegments, initi
   const containerRef = useRef<HTMLDivElement>(null);
   const scaleRef = useRef<number>(1);
   const imageRef = useRef<HTMLImageElement | null>(null);
-  const pathCacheRef = useRef<Map<number, Path2D>>(new Map());
 
   // --- 1. Image Initialization & Cleanup ---
   useEffect(() => {
@@ -89,14 +88,11 @@ export default function InferenceAnalysis({ initialImage, initialSegments, initi
     if (initialCount) setCountResult(initialCount as CountResult);
     
     // Capture refs for cleanup (avoid stale closure issues)
-    const pathCache = pathCacheRef.current;
     const offscreenBg = offscreenBgRef;
     const imageRefCopy = imageRef;
     
     // Cleanup on unmount: clear all caches and release memory
     return () => {
-      // Clear path cache
-      pathCache.clear();
       // Clear offscreen canvas
       offscreenBg.current = null;
       // Release image reference
@@ -171,60 +167,7 @@ export default function InferenceAnalysis({ initialImage, initialSegments, initi
     ctx.restore();
   }, [zoom, panX, panY]);
 
-  // Build/retrieve cached Path2D for a segment with subpixel precision and validation
-  const getSegmentPath = useCallback((index: number, segment: Segment): Path2D | null => {
-    if (pathCacheRef.current.has(index)) {
-      return pathCacheRef.current.get(index) ?? null;
-    }
-    
-    let poly2d: number[][] | null = null;
-    if (segment.polygon && segment.polygon.length > 0) {
-      const first = segment.polygon[0];
-      const isPoint = (p: unknown): p is number[] => Array.isArray(p) && typeof (p as unknown[])[0] === 'number';
-      const isPolyOfPolys = (p: unknown): p is number[][][] => Array.isArray(p) && Array.isArray((p as unknown[])[0]) && Array.isArray(((p as unknown[])[0] as unknown[])[0]);
-      if (isPoint(first)) poly2d = segment.polygon as number[][];
-      else if (isPolyOfPolys(segment.polygon)) poly2d = (segment.polygon as number[][][])[0];
-    }
-    
-    // Validate polygon: must have at least 3 points to form a valid shape
-    if (!poly2d || poly2d.length < 3) {
-      console.warn(`[InferenceAnalysis] Invalid polygon for segment ${index}: ${poly2d?.length || 0} points (need ≥3)`);
-      return null;
-    }
-    
-    // Validate coordinates: must be finite numbers within reasonable bounds
-    const img = imageRef.current;
-    const maxX = img ? img.naturalWidth * 2 : 10000; // Allow 2x natural size for safety
-    const maxY = img ? img.naturalHeight * 2 : 10000;
-    
-    for (let i = 0; i < poly2d.length; i++) {
-      const [x, y] = poly2d[i];
-      if (!Number.isFinite(x) || !Number.isFinite(y) || x < -maxX || x > maxX || y < -maxY || y > maxY) {
-        console.warn(`[InferenceAnalysis] Invalid coordinates for segment ${index} at point ${i}: [${x}, ${y}]`);
-        return null;
-      }
-    }
-    
-    const s = scaleRef.current || 1;
-    const path = new Path2D();
-    
-    // Subpixel precision: round coordinates to 2 decimal places
-    const x0 = Math.round(poly2d[0][0] * s * 100) / 100;
-    const y0 = Math.round(poly2d[0][1] * s * 100) / 100;
-    path.moveTo(x0, y0);
-    
-    for (let i = 1; i < poly2d.length; i++) {
-      const x = Math.round(poly2d[i][0] * s * 100) / 100;
-      const y = Math.round(poly2d[i][1] * s * 100) / 100;
-      path.lineTo(x, y);
-    }
-    
-    path.closePath();
-    pathCacheRef.current.set(index, path);
-    return path;
-  }, []);
-
-  // Draw overlays (polygons, boxes, labels) with zoom/pan transform and advanced rendering
+  // Draw overlays (bounding boxes and labels) with zoom/pan transform
   const drawOverlay = useCallback(() => {
     const canvas = overlayCanvasRef.current;
     const img = imageRef.current;
@@ -243,40 +186,33 @@ export default function InferenceAnalysis({ initialImage, initialSegments, initi
     ctx.imageSmoothingQuality = 'high';
     ctx.lineJoin = 'round'; // Smooth corners
     ctx.lineCap = 'round'; // Smooth line ends
-    ctx.miterLimit = 2; // Prevent sharp spikes
 
-    // Loop segments and draw
+    // Loop segments and draw bounding boxes
     for (let index = 0; index < segments.length; index++) {
       const segment = segments[index];
       const isHovered = index === hoveredIndex;
       const baseColor = getColorForLabel(segment.label);
 
-      const path = getSegmentPath(index, segment);
-      if (path) {
-        // Enhanced stroke rendering
-        ctx.lineWidth = isHovered ? 3.5 : 2;
-        ctx.strokeStyle = baseColor;
-        ctx.stroke(path);
-
-        // Enhanced fill with better opacity
-        if (showFill || isHovered) {
-          ctx.save();
-          ctx.globalAlpha = isHovered ? 0.35 : 0.15;
-          ctx.fillStyle = baseColor;
-          ctx.fill(path);
-          ctx.restore();
-        }
-      } else {
-        // bbox fallback with subpixel precision
-        const [x, y, x2, y2] = segment.bbox;
-        const s = scaleRef.current || 1;
-        const sx = Math.round(x * s * 100) / 100;
-        const sy = Math.round(y * s * 100) / 100;
-        const sw = Math.round((x2 - x) * s * 100) / 100;
-        const sh = Math.round((y2 - y) * s * 100) / 100;
-        ctx.lineWidth = isHovered ? 3.5 : 2;
-        ctx.strokeStyle = baseColor;
-        ctx.strokeRect(sx, sy, sw, sh);
+      // Draw bounding box with subpixel precision
+      const [x, y, x2, y2] = segment.bbox;
+      const s = scaleRef.current || 1;
+      const sx = Math.round(x * s * 100) / 100;
+      const sy = Math.round(y * s * 100) / 100;
+      const sw = Math.round((x2 - x) * s * 100) / 100;
+      const sh = Math.round((y2 - y) * s * 100) / 100;
+      
+      // Draw stroke
+      ctx.lineWidth = isHovered ? 3.5 : 2;
+      ctx.strokeStyle = baseColor;
+      ctx.strokeRect(sx, sy, sw, sh);
+      
+      // Draw fill if enabled
+      if (showFill || isHovered) {
+        ctx.save();
+        ctx.globalAlpha = isHovered ? 0.15 : 0.08;
+        ctx.fillStyle = baseColor;
+        ctx.fillRect(sx, sy, sw, sh);
+        ctx.restore();
       }
 
       // Enhanced labels with rounded rectangles and gradients
@@ -334,7 +270,7 @@ export default function InferenceAnalysis({ initialImage, initialSegments, initi
       }
     }
     ctx.restore();
-  }, [segments, hoveredIndex, showLabels, showFill, getSegmentPath, zoom, panX, panY]);
+  }, [segments, hoveredIndex, showLabels, showFill, zoom, panX, panY]);
 
   // Handle Image Load & resize canvases (with proper cleanup to prevent memory leaks)
   useEffect(() => {
@@ -433,7 +369,7 @@ export default function InferenceAnalysis({ initialImage, initialSegments, initi
     setPanY(0);
   }, []);
 
-  // Mouse move handler: use precise polygon hit-testing when possible
+  // Mouse move handler: bbox hit-testing only
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     const overlay = overlayCanvasRef.current;
     const img = imageRef.current;
@@ -443,36 +379,12 @@ export default function InferenceAnalysis({ initialImage, initialSegments, initi
     const mouseX = (e.clientX - rect.left - panX) / zoom;
     const mouseY = (e.clientY - rect.top - panY) / zoom;
 
-    // iterate top-most first
+    // Iterate top-most first for bbox hit testing
     for (let i = segments.length - 1; i >= 0; i--) {
       const seg = segments[i];
-      let hit = false;
-      if (seg.polygon && seg.polygon.length > 0) {
-        let poly2d: number[][] | null = null;
-        const first = seg.polygon[0];
-        const isPoint = (p: unknown): p is number[] => Array.isArray(p) && typeof (p as unknown[])[0] === 'number';
-        const isPolyOfPolys = (p: unknown): p is number[][][] => Array.isArray(p) && Array.isArray((p as unknown[])[0]) && Array.isArray(((p as unknown[])[0] as unknown[])[0]);
-        if (isPoint(first)) poly2d = seg.polygon as number[][];
-        else if (isPolyOfPolys(seg.polygon)) poly2d = (seg.polygon as number[][][])[0];
-
-        if (poly2d) {
-          const s = scaleRef.current || 1;
-          const path = new Path2D();
-          path.moveTo(poly2d[0][0] * s, poly2d[0][1] * s);
-          for (let k = 1; k < poly2d.length; k++) path.lineTo(poly2d[k][0] * s, poly2d[k][1] * s);
-          path.closePath();
-          const ctx = overlay.getContext('2d');
-          if (ctx && ctx.isPointInPath(path, mouseX, mouseY)) {
-            hit = true;
-          }
-        }
-      }
-      if (!hit) {
-        const [x1, y1, x2, y2] = seg.bbox;
-        const s = scaleRef.current || 1;
-        if (mouseX >= x1 * s && mouseX <= x2 * s && mouseY >= y1 * s && mouseY <= y2 * s) hit = true;
-      }
-      if (hit) {
+      const [x1, y1, x2, y2] = seg.bbox;
+      const s = scaleRef.current || 1;
+      if (mouseX >= x1 * s && mouseX <= x2 * s && mouseY >= y1 * s && mouseY <= y2 * s) {
         if (hoveredIndex !== i) setHoveredIndex(i);
         return;
       }

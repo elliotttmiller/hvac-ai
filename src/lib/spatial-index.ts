@@ -105,39 +105,10 @@ export class SpatialAnnotationIndex {
 }
 
 /**
- * Test if a point is inside a polygon using ray casting algorithm
+ * Test if a point is inside a bounding box
  */
-export function isPointInPolygon(point: [number, number], polygon: number[][]): boolean {
+export function isPointInBbox(point: [number, number], bbox: [number, number, number, number]): boolean {
   const [x, y] = point;
-  let inside = false;
-
-  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-    const [xi, yi] = polygon[i];
-    const [xj, yj] = polygon[j];
-
-    const intersect = yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi;
-
-    if (intersect) inside = !inside;
-  }
-
-  return inside;
-}
-
-/**
- * Calculate bounding box from polygon
- */
-export function getBoundsFromPolygon(polygon: number[][]): [number, number, number, number] {
-  let minX = Number.POSITIVE_INFINITY;
-  let minY = Number.POSITIVE_INFINITY;
-  let maxX = Number.NEGATIVE_INFINITY;
-  let maxY = Number.NEGATIVE_INFINITY;
-
-  for (const [x, y] of polygon) {
-    minX = Math.min(minX, x);
-    minY = Math.min(minY, y);
-    maxX = Math.max(maxX, x);
-    maxY = Math.max(maxY, y);
-  }
-
-  return [minX, minY, maxX, maxY];
+  const [x1, y1, x2, y2] = bbox;
+  return x >= x1 && x <= x2 && y >= y1 && y <= y2;
 }

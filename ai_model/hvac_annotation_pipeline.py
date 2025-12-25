@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 import os
 import time
+import csv
 import pandas as pd
 import numpy as np
 import cv2
@@ -32,6 +33,10 @@ def install_requirements():
     print("📦 INSTALLING REQUIRED DEPENDENCIES...")
     print("="*80)
     
+    def parse_package_name(package_spec: str) -> str:
+        """Extract package name from package specification"""
+        return package_spec.split(">=")[0].split("==")[0]
+    
     core_packages = [
         "roboflow>=1.0.0",
         "opencv-python-headless>=4.8.0",
@@ -47,7 +52,7 @@ def install_requirements():
     
     for package in core_packages:
         try:
-            pkg_name = package.split(">=")[0].split("==")[0]
+            pkg_name = parse_package_name(package)
             import importlib.util
             spec = importlib.util.find_spec(pkg_name)
             if spec is None:
@@ -605,13 +610,24 @@ class HVACAnnotationPipeline:
             img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             img_h, img_w = img.shape[:2]
             
+            # Read annotations to get container IDs
+            yaml_path = Path(self.temp_dir) / "download" / "data.yaml"
+            with open(yaml_path, 'r') as f:
+                config = yaml.safe_load(f)
+            names = config.get('names', [])
+            if isinstance(names, dict):
+                names = [names[i] for i in range(len(names))]
+            class_map = {name: i for i, name in enumerate(names)}
+            container_ids = [class_map[c] for c in self.containers if c in class_map]
+            
             # Create figure
             fig, ax = plt.subplots(1, figsize=(12, 8))
             ax.imshow(img)
             
             # Plot annotations
+            container_idx = 0
             with open(label_file, 'r') as f:
-                for line_idx, line in enumerate(f):
+                for line in f:
                     parts = line.strip().split()
                     if len(parts) < 5:
                         continue
@@ -628,10 +644,11 @@ class HVACAnnotationPipeline:
                     x1 = x_pixel - w_pixel/2
                     y1 = y_pixel - h_pixel/2
                     
-                    # Get container status if available
-                    container_status = container_analysis[line_idx] if line_idx < len(container_analysis) else None
-                    
-                    if container_status:
+                    # Check if this is a container and get its status
+                    if class_id in container_ids and container_idx < len(container_analysis):
+                        container_status = container_analysis[container_idx]
+                        container_idx += 1
+                        
                         if container_status['is_complete']:
                             color = 'green'
                             status = 'COMPLETE'
@@ -645,11 +662,11 @@ class HVACAnnotationPipeline:
                             status = f"MISSING: {', '.join(missing)}"
                     else:
                         color = 'gray'
-                        status = 'UNKNOWN'
+                        status = names[class_id] if class_id < len(names) else f'Class {class_id}'
                     
                     rect = Rectangle((x1, y1), w_pixel, h_pixel, fill=False, edgecolor=color, linewidth=2)
                     ax.add_patch(rect)
-                    ax.text(x1 + 5, y1 + 15, f'Class {class_id}: {status}', 
+                    ax.text(x1 + 5, y1 + 15, f'{status}', 
                            color='black', fontsize=8, bbox=dict(facecolor='white', alpha=0.7))
             
             ax.set_title(f'DELETED IMAGE: {label_file.stem}\nMode: {self.sanitation_mode.upper()}', 
@@ -780,8 +797,6 @@ class HVACAnnotationPipeline:
         """Generate CSV report of deletions"""
         if not self.stats['deletion_details']:
             return
-        
-        import csv
         
         csv_path = report_dir / 'deletion_details.csv'
         with open(csv_path, 'w', newline='') as f:

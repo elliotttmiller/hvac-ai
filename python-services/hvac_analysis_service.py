@@ -16,6 +16,7 @@ import sys
 import threading
 import queue as _queue
 import json
+import time
 
 # --- CONFIGURATION ---
 # Force unbuffered output for Colab real-time logs
@@ -44,15 +45,27 @@ ml_models = {}
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("🟢 Server Starting...")
-    if not MODEL_PATH or not os.path.exists(MODEL_PATH):
-        logger.error(f"❌ MODEL_PATH invalid: {MODEL_PATH}")
+    
+    if not MODEL_PATH:
+        logger.error("❌ MODEL_PATH environment variable not set")
+        logger.error("   Please set MODEL_PATH in your .env file to point to your YOLO model")
+    elif not os.path.exists(MODEL_PATH):
+        logger.error(f"❌ MODEL_PATH file not found: {MODEL_PATH}")
+        logger.error("   Please ensure the model file exists at the specified path")
     else:
         try:
+            logger.info("🔄 Initializing YOLO inference engine...")
             ml_models["yolo_engine"] = create_yolo_engine(model_path=MODEL_PATH)
-            logger.info("✅ Inference Engine Attached.")
+            logger.info("✅ Inference Engine Attached and Ready.")
         except Exception as e:
-            logger.error(f"❌ Engine Init Failed: {e}")
+            logger.error(f"❌ Engine Init Failed: {e}", exc_info=True)
+            logger.error("   The server will start but analysis endpoints will not work")
+    
     yield
+    
+    # Cleanup on shutdown
+    if ml_models.get("yolo_engine"):
+        logger.info("🧹 Cleaning up inference engine...")
     ml_models.clear()
     logger.info("🔴 Server Shutting Down.")
 
@@ -74,37 +87,81 @@ async def health_check():
     """
     engine = ml_models.get("yolo_engine")
     model_loaded = engine is not None
-    response = {"status": "healthy", "model_loaded": model_loaded}
+    response = {
+        "status": "healthy",
+        "model_loaded": model_loaded,
+        "version": "2.1.0",
+        "device": None,
+    }
+    
     if model_loaded:
         try:
+            # Provide device information
+            if hasattr(engine, 'device'):
+                response["device"] = str(engine.device)
+            
             # Provide a compact model identifier if available
             model_info = getattr(engine, 'model', None)
-            model_name = getattr(model_info, 'model', None) or getattr(model_info, 'weights', None) or None
-            if model_name:
-                response["model"] = str(model_name)
-        except Exception:
-            # best-effort only
-            pass
+            if model_info:
+                model_name = getattr(model_info, 'model', None) or getattr(model_info, 'weights', None)
+                if model_name:
+                    response["model"] = str(model_name)
+                
+                # Add class count
+                if hasattr(model_info, 'names'):
+                    response["num_classes"] = len(model_info.names)
+        except Exception as e:
+            # best-effort only - don't fail health check
+            logger.debug(f"Could not extract model info: {e}")
     else:
         response["message"] = "Inference engine not attached; check MODEL_PATH and server logs"
+        response["model_path"] = MODEL_PATH or "not set"
 
     return response
 
 @app.post("/api/v1/analyze")
 async def analyze_blueprint(
     image: UploadFile = File(...), 
-    conf_threshold: float = Form(0.50) # Set Default to 0.50 here
+    conf_threshold: float = Form(0.50)
 ):
-    logger.info(f"📡 [API] Received Request: /analyze (file={image.filename})")
+    """Analyze HVAC blueprint image for component detection.
+    
+    Args:
+        image: Uploaded image file
+        conf_threshold: Confidence threshold for detections (0.0-1.0)
+        
+    Returns:
+        Analysis results with detected components
+    """
+    logger.info(f"📡 [API] Received Request: /analyze (file={image.filename}, conf={conf_threshold})")
     
     engine = ml_models.get("yolo_engine")
     if not engine:
-        raise HTTPException(status_code=503, detail="Model not loaded")
+        logger.error("Model not loaded - cannot process request")
+        raise HTTPException(
+            status_code=503, 
+            detail="Model not loaded. Check server logs and MODEL_PATH configuration."
+        )
 
     try:
+        # Validate file
+        if not image.filename:
+            raise HTTPException(status_code=400, detail="No filename provided")
+        
+        # Read and validate image
         contents = await image.read()
-        pil_image = Image.open(io.BytesIO(contents)).convert("RGB")
+        if not contents:
+            raise HTTPException(status_code=400, detail="Empty file uploaded")
+        
+        # Convert to PIL and then numpy
+        try:
+            pil_image = Image.open(io.BytesIO(contents)).convert("RGB")
+        except Exception as e:
+            logger.error(f"Failed to open image: {e}")
+            raise HTTPException(status_code=400, detail=f"Invalid image file: {str(e)}")
+        
         image_np = np.array(pil_image)
+        logger.info(f"📷 [API] Image loaded: {image_np.shape}")
 
         # Pass to engine (Logs happen inside engine)
         results = engine.predict(image_np, conf_threshold=conf_threshold)
@@ -114,32 +171,67 @@ async def analyze_blueprint(
         return {
             "status": "success",
             "analysis_id": uuid.uuid4().hex,
+            "file_name": image.filename,
             **results
         }
 
+    except HTTPException:
+        raise  # Re-raise HTTP exceptions
+    except ValueError as e:
+        logger.error(f"❌ [API] Validation Error: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"❌ [API] Error: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
 
 
 @app.post("/api/v1/analyze/stream")
-async def analyze_blueprint_stream(request: Request, image: UploadFile = File(...), conf_threshold: float = Form(0.50)):
+async def analyze_blueprint_stream(
+    request: Request, 
+    image: UploadFile = File(...), 
+    conf_threshold: float = Form(0.50)
+):
     """Stream analysis progress as Server-Sent Events (SSE).
 
     The endpoint starts the inference in a background thread and yields JSON
     events as SSE `data:` payloads. Events have a `type` field: 'status',
     'progress', and 'result'.
+    
+    Args:
+        request: FastAPI request object (for disconnect detection)
+        image: Uploaded image file
+        conf_threshold: Confidence threshold for detections (0.0-1.0)
+        
+    Returns:
+        Streaming response with SSE events
     """
-    logger.info(f"📡 [API] Received Stream Request: /analyze/stream (file={image.filename})")
+    logger.info(f"📡 [API] Received Stream Request: /analyze/stream (file={image.filename}, conf={conf_threshold})")
 
     engine = ml_models.get("yolo_engine")
     if not engine:
-        raise HTTPException(status_code=503, detail="Model not loaded")
+        logger.error("Model not loaded - cannot process streaming request")
+        raise HTTPException(
+            status_code=503, 
+            detail="Model not loaded. Check server logs and MODEL_PATH configuration."
+        )
 
     try:
+        # Validate and read image
+        if not image.filename:
+            raise HTTPException(status_code=400, detail="No filename provided")
+            
         contents = await image.read()
-        pil_image = Image.open(io.BytesIO(contents)).convert("RGB")
+        if not contents:
+            raise HTTPException(status_code=400, detail="Empty file uploaded")
+        
+        try:
+            pil_image = Image.open(io.BytesIO(contents)).convert("RGB")
+        except Exception as e:
+            logger.error(f"Failed to open image: {e}")
+            raise HTTPException(status_code=400, detail=f"Invalid image file: {str(e)}")
+            
         image_np = np.array(pil_image)
+        logger.info(f"📷 [API] Stream image loaded: {image_np.shape}")
 
         q: _queue.Queue = _queue.Queue()
         done_event = threading.Event()

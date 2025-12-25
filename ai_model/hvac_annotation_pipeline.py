@@ -7,10 +7,12 @@ Optimized for preserving small text labels and symbols in HVAC diagrams
 import sys
 import subprocess
 import json
-from pathlib import Path
+import csv
 import os
 import time
-import csv
+from pathlib import Path
+from typing import Dict, List, Tuple, Optional, Any
+
 import pandas as pd
 import numpy as np
 import cv2
@@ -20,7 +22,28 @@ import shutil
 import yaml
 from tqdm import tqdm
 import zipfile
-from typing import Dict, List, Tuple, Optional, Any
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 🔧 CONSTANTS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Coordinate tolerance for matching annotations (normalized coordinates)
+COORDINATE_TOLERANCE = 0.001
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 🔧 HELPER FUNCTIONS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def parse_package_name(package_spec: str) -> str:
+    """Extract package name from package specification
+    
+    Args:
+        package_spec: Package specification like 'numpy>=1.24.0' or 'pandas==2.0.0'
+    
+    Returns:
+        Package name without version specifier
+    """
+    return package_spec.split(">=")[0].split("==")[0]
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 📦 DEPENDENCY INSTALLATION SECTION - HVAC-optimized
@@ -32,10 +55,6 @@ def install_requirements():
     print("🚀 INITIALIZING HVAC-SPECIFIC ANNOTATION PIPELINE")
     print("📦 INSTALLING REQUIRED DEPENDENCIES...")
     print("="*80)
-    
-    def parse_package_name(package_spec: str) -> str:
-        """Extract package name from package specification"""
-        return package_spec.split(">=")[0].split("==")[0]
     
     core_packages = [
         "roboflow>=1.0.0",
@@ -664,8 +683,8 @@ class HVACAnnotationPipeline:
                     container_idx = None
                     for idx, cont_ann in enumerate(container_annotations):
                         if (cont_ann['class_id'] == class_id and 
-                            abs(cont_ann['xc'] - xc) < 0.001 and 
-                            abs(cont_ann['yc'] - yc) < 0.001):
+                            abs(cont_ann['xc'] - xc) < COORDINATE_TOLERANCE and 
+                            abs(cont_ann['yc'] - yc) < COORDINATE_TOLERANCE):
                             container_idx = idx
                             break
                     

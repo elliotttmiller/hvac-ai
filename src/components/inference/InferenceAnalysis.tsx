@@ -28,36 +28,32 @@ const CLASS_COLORS: Record<string, string> = {
 // Cache assigned colors per label so the same label always receives the same color
 const labelColorCache = new Map<string, string>();
 
-function labelToColor(label: string) {
-  if (!label) return CLASS_COLORS.default;
-  const key = String(label);
+function djb2Hash(str: string) {
+  let hash = 5381;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) + hash) + str.charCodeAt(i);
+    hash = hash | 0;
+  }
+  return Math.abs(hash);
+}
+
+// Assign a unique color per full label string by hashing the label to a hue
+// across the full 0-359 range. This makes each label distinct even within the
+// same semantic group.
+function getColorForLabel(label: string) {
+  const key = String(label || '');
   const cached = labelColorCache.get(key);
   if (cached) return cached;
 
-  // djb2 hash
-  let hash = 5381;
-  for (let i = 0; i < key.length; i++) {
-    hash = ((hash << 5) + hash) + key.charCodeAt(i); /* hash * 33 + c */
-    hash = hash | 0;
-  }
-  const hue = Math.abs(hash) % 360;
+  const h = djb2Hash(key + '::unique');
+  const hue = h % 360;
 
-  // Use pleasant saturation/lightness for good contrast on dark backgrounds
-  const saturation = 65;
-  const lightness = 55;
-  const color = `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+  // Choose saturation/lightness for good contrast on dark backgrounds
+  const sat = 68;
+  const light = 52;
+  const color = `hsl(${hue}, ${sat}%, ${light}%)`;
   labelColorCache.set(key, color);
   return color;
-}
-
-function getColorForLabel(label: string) {
-  // Always generate a unique color per full label string. This ensures
-  // subclasses (e.g. "Valve Gate", "Valve Globe") get distinct colors.
-  try {
-    return labelToColor(label || '');
-  } catch (err) {
-    return CLASS_COLORS.default;
-  }
 }
 
 interface InferenceAnalysisProps {
@@ -332,21 +328,21 @@ export default function InferenceAnalysis({ initialImage, initialSegments, initi
       const isMatch = matchesFilter && matchesHighlight;
       if (!matchesFilter) {
         // draw faint outline for non-matches (so user can still see context)
-        ctx.lineWidth = 0.8;
-        ctx.strokeStyle = 'rgba(200,200,200,0.06)';
+        ctx.lineWidth = 0.5;
+        ctx.strokeStyle = 'rgba(200,200,200,0.04)';
         ctx.stroke(path);
       }
 
       if (isMatch || !filterCategory) {
         // emphasis for hovered or highlighted
-        // Use thinner lines for a clean, sleek look; slightly thicker on hover
-        ctx.lineWidth = isHovered || (highlightedCategory && seg.label === highlightedCategory) ? 2.0 : 1.2;
+        // Thinner default stroke and modest hover increase for crisp lines
+        ctx.lineWidth = isHovered || (highlightedCategory && seg.label === highlightedCategory) ? 1.2 : 0.8;
         ctx.strokeStyle = color;
         ctx.stroke(path);
 
         if (showFill || isHovered) {
           ctx.fillStyle = color;
-          ctx.globalAlpha = isHovered ? 0.22 : 0.08;
+          ctx.globalAlpha = isHovered ? 0.18 : 0.06;
           ctx.fill(path);
           ctx.globalAlpha = 1.0;
         }

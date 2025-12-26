@@ -216,7 +216,7 @@ export default function DeepZoomViewer({
         ctx.globalAlpha = 1.0;
       }
 
-  ctx.lineWidth = isSelected ? 2.0 : isHovered ? 1.8 : 1.2;
+  ctx.lineWidth = isSelected ? 1.6 : isHovered ? 1.2 : 0.9;
       ctx.strokeStyle = color;
       ctx.stroke();
 

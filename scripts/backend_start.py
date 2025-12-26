@@ -9,6 +9,10 @@ cv2 = None
 torch = None
 YOLO = None
 import logging
+import traceback
+import time
+import platform
+from logging.handlers import RotatingFileHandler
 import sys
 from pathlib import Path
 import uuid
@@ -56,12 +60,32 @@ IMG_SIZE = 1024
 # HALF will be set after importing torch (if model is loaded); default false
 
 # --- LOGGING SETUP ---
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - [BACKEND] - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler(sys.stdout)]
-)
+LOG_DIR = REPO_ROOT / "logs"
+try:
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+except Exception:
+    pass
+
+log_file = LOG_DIR / "backend.log"
+
 logger = logging.getLogger("HVAC-Backend")
+logger.setLevel(logging.INFO)
+
+# Console handler
+ch = logging.StreamHandler(sys.stdout)
+ch.setLevel(logging.INFO)
+formatter = logging.Formatter('%(asctime)s - [BACKEND] - %(levelname)s - %(message)s')
+ch.setFormatter(formatter)
+logger.addHandler(ch)
+
+# Rotating file handler so we have persistent logs to inspect
+try:
+    fh = RotatingFileHandler(str(log_file), maxBytes=5 * 1024 * 1024, backupCount=5, encoding='utf-8')
+    fh.setLevel(logging.DEBUG)
+    fh.setFormatter(formatter)
+    logger.addHandler(fh)
+except Exception as e:
+    logger.warning(f"Could not create rotating file handler for logs: {e}")
 
 app = FastAPI(title="HVAC Local Inference API")
 
@@ -77,6 +101,8 @@ app.add_middleware(
 model = None
 HALF = False
 pricing_engine = None
+last_exception = None
+start_time = time.time()
 
 # Dev mode: skip loading heavy ML stack
 # Can be enabled via environment variable SKIP_MODEL=1 or CLI arg --no-model
@@ -143,7 +169,10 @@ async def load_model():
         except Exception as e:
             logger.warning(f"Model warmup failed (this may be expected on CPU): {e}")
     except Exception as e:
-        logger.error(f"Failed to load model: {e}")
+        logger.exception(f"Failed to load model: {e}")
+        # capture last exception for diagnostics endpoint
+        global last_exception
+        last_exception = {"ts": time.time(), "error": str(e), "traceback": traceback.format_exc()}
 
 
 @app.get("/health")
@@ -254,6 +283,7 @@ async def generate_quote(request: Request):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.exception("Quote generation failed")
+        last_exception = {"ts": time.time(), "error": str(e), "traceback": traceback.format_exc()}
         raise HTTPException(status_code=500, detail=f"Quote generation failed: {e}")
 
 
@@ -273,6 +303,7 @@ def quote_available():
         return JSONResponse(content={"available": True}, status_code=200)
     except Exception as e:
         logger.warning(f"quote_available check failed: {e}")
+        last_exception = {"ts": time.time(), "error": str(e), "traceback": traceback.format_exc()}
         return JSONResponse(content={"available": False, "reason": str(e)}, status_code=200)
 
 # Match the path your frontend expects
@@ -300,8 +331,94 @@ async def analyze_image(request: Request, file: UploadFile = File(None), image: 
         return JSONResponse(content=response_data)
 
     except Exception as e:
-        logger.error(f"Error: {e}")
+        logger.exception(f"Error analyzing image: {e}")
+        global last_exception
+        last_exception = {"ts": time.time(), "error": str(e), "traceback": traceback.format_exc()}
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- Diagnostics & Request logging middleware ---
+def _tail_file(path: Path, lines: int = 200):
+    try:
+        with open(path, 'r', encoding='utf-8', errors='ignore') as f:
+            # naive tail implementation
+            return ''.join(f.readlines()[-lines:])
+    except Exception:
+        return None
+
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    """Log all incoming requests, measure duration, and capture unhandled exceptions.
+
+    This middleware also records the last exception so the diagnostics endpoint can
+    return helpful traces when something goes wrong.
+    """
+    method = request.method
+    url = str(request.url)
+    start = time.time()
+    try:
+        response = await call_next(request)
+        duration = (time.time() - start) * 1000.0
+        logger.info(f"{method} {request.url.path} -> {response.status_code} ({duration:.1f}ms)")
+        return response
+    except Exception as e:
+        duration = (time.time() - start) * 1000.0
+        logger.exception(f"Unhandled exception for {method} {request.url.path} after {duration:.1f}ms: {e}")
+        global last_exception
+        last_exception = {"ts": time.time(), "error": str(e), "traceback": traceback.format_exc()}
+        # Re-raise so FastAPI still handles producing an HTTP 500
+        raise
+
+
+@app.get("/api/v1/diagnostics")
+def diagnostics():
+    """Return lightweight diagnostics about the running backend useful for debugging.
+
+    Includes model and pricing availability, uptime, environment flags, package versions,
+    and the last captured exception trace and recent log tail.
+    """
+    # Check package versions safely
+    def _ver(module_name: str):
+        try:
+            m = __import__(module_name)
+            return getattr(m, '__version__', str(m))
+        except Exception:
+            return None
+
+    python = platform.python_version()
+    torch_ver = _ver('torch')
+    ultralytics_ver = _ver('ultralytics')
+
+    uptime = time.time() - start_time
+
+    model_loaded = model is not None
+    pricing_importable = PricingEngine is not None
+    pricing_initialized = pricing_engine is not None
+
+    # Read last chunk of logs to help debug race conditions or startup failures
+    recent_logs = _tail_file(log_file, lines=500)
+
+    return JSONResponse(content={
+        "status": "ok",
+        "uptime_seconds": int(uptime),
+        "model_loaded": bool(model_loaded),
+        "pricing_importable": bool(pricing_importable),
+        "pricing_initialized": bool(pricing_initialized),
+        "env": {
+            "MODEL_PATH": MODEL_PATH,
+            "SKIP_MODEL": SKIP_MODEL,
+            "FORCE_CPU": FORCE_CPU,
+            "PORT": PORT,
+        },
+        "packages": {
+            "python": python,
+            "torch": torch_ver,
+            "ultralytics": ultralytics_ver
+        },
+        "last_exception": last_exception,
+        "recent_logs": recent_logs
+    })
 
 
 if __name__ == "__main__":

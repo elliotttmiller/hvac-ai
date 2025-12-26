@@ -18,7 +18,7 @@ Validates core inference functionality (YOLO/Ultralytics):
 
 ### Prerequisites
 ```bash
-  cd services/hvac-analysis
+  cd services/hvac-ai
 source venv/bin/activate  # or venv\Scripts\activate on Windows
 pip install -r requirements.txt
 ```

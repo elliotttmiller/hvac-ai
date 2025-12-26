@@ -5,7 +5,7 @@ This directory contains the backend AI services for the HVAC AI Platform.
 ## Structure
 
 ```
-services/hvac-analysis/
+services/hvac-ai/
 ├── core/                          # Core business logic
 │   ├── ai/                       # AI models and inference
 │   │   ├── yolo_inference.py    # YOLO/Ultralytics model inference engine
@@ -40,7 +40,7 @@ services/hvac-analysis/
 
 3. **Start the service**
    ```bash
-   python hvac_analysis_service.py
+   python hvac_unified_service.py
    ```
 
    The API will be available at:
@@ -102,7 +102,7 @@ services/hvac-analysis/
 
 Place your trained inference model at (YOLO/Ultralytics recommended):
 ```bash
-services/hvac-analysis/models/<your_model_file>.pt
+services/hvac-ai/models/<your_model_file>.pt
 ```
 
 If no model is found, the service runs in mock mode for development.
@@ -146,7 +146,7 @@ If no model is found, the service runs in mock mode for development.
 
 ### Adding New Endpoints
 
-1. Add route to `hvac_analysis_service.py`
+1. Add route to `hvac_unified_service.py`
 2. Implement business logic in appropriate `core/` module
 3. Update documentation
 4. Test with FastAPI's interactive docs

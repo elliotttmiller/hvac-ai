@@ -201,10 +201,10 @@ curl -X POST "http://localhost:8000/api/v1/pipeline/analyze" \
   -F "confidence_threshold=0.7"
 ```
 
-## File Structure
+File Structure
 
 ```
-services/hvac-analysis/
+services/hvac-ai/
 ├── core/ai/
 │   ├── pipeline_models.py      # Data models (370 lines)
 │   ├── hvac_pipeline.py        # Main pipeline (685 lines)
@@ -214,7 +214,7 @@ services/hvac-analysis/
 │   └── test_hvac_pipeline.py   # Test suite (500+ lines)
 ├── examples/
 │   └── pipeline_examples.py    # Usage examples (300+ lines)
-├── hvac_analysis_service.py    # Main service (updated)
+├── hvac_unified_service.py     # Main service (updated)
 ├── PIPELINE_README.md          # Documentation (400+ lines)
 └── requirements.txt            # Dependencies (includes easyocr)
 ```
@@ -273,7 +273,7 @@ services/hvac-analysis/
 
 Run tests:
 ```bash
-cd services/hvac-analysis
+cd services/hvac-ai
 pytest tests/test_hvac_pipeline.py -v
 ```
 

@@ -52,7 +52,7 @@ chmod +x scripts/*.sh
 
 # Or start them separately:
 npm run dev                      # Frontend only
-cd services/hvac-analysis && python hvac_analysis_service.py  # Backend only
+python services/hvac_unified_service.py  # Backend only (see services/hvac-ai for modules)
 ```
 
 ## Adding New Scripts

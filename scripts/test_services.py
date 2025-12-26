@@ -10,10 +10,22 @@ import sys
 import os
 from pathlib import Path
 
-# Add services/hvac-analysis to path
+# Add services/hvac-ai to path
 REPO_ROOT = Path(__file__).parent.parent
-PYTHON_SERVICES = REPO_ROOT / "services" / "hvac-analysis"
-sys.path.insert(0, str(PYTHON_SERVICES))
+# Ensure repo root is on sys.path so imports like `core.services.*` resolve
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+# Also add services package (prefer hvac-ai service folder when present)
+PYTHON_SERVICES = REPO_ROOT / "services" / "hvac-ai"
+if PYTHON_SERVICES.exists():
+    if str(PYTHON_SERVICES) not in sys.path:
+        sys.path.insert(0, str(PYTHON_SERVICES))
+else:
+    # fall back to services/ if structure differs
+    alt = REPO_ROOT / 'services'
+    if alt.exists() and str(alt) not in sys.path:
+        sys.path.insert(0, str(alt))
 
 import numpy as np
 import cv2
@@ -36,15 +48,12 @@ def test_object_detector():
     try:
         from core.services.object_detector import ObjectDetector
         
-        # Get model path
-        model_path = os.getenv(
-            'YOLO_MODEL_PATH',
-            str(REPO_ROOT / 'ai_model' / 'best.pt')
-        )
-        
+        # Get model path (prefer MODEL_PATH, fall back to legacy YOLO_MODEL_PATH)
+        model_path = os.getenv('MODEL_PATH') or os.getenv('YOLO_MODEL_PATH') or str(REPO_ROOT / 'ai_model' / 'best.pt')
+
         if not os.path.exists(model_path):
             logger.error(f"Model not found: {model_path}")
-            logger.error("Set YOLO_MODEL_PATH environment variable")
+            logger.error("Set MODEL_PATH (or legacy YOLO_MODEL_PATH) environment variable")
             return False
         
         logger.info(f"Loading model from: {model_path}")
@@ -55,15 +64,15 @@ def test_object_detector():
         
         logger.info("Running test detection...")
         detections = detector.detect(test_image)
-        
-        logger.info(f"✅ ObjectDetector test passed!")
+
+        logger.info(f"ObjectDetector test passed")
         logger.info(f"   Detections: {len(detections)}")
         logger.info(f"   Class names: {detector.get_class_names()}")
-        
+
         return True
         
     except Exception as e:
-        logger.error(f"❌ ObjectDetector test failed: {e}", exc_info=True)
+        logger.error(f"ObjectDetector test failed: {e}", exc_info=True)
         return False
 
 
@@ -96,16 +105,16 @@ def test_text_extractor():
         
         if result:
             text, confidence = result
-            logger.info(f"✅ TextExtractor test passed!")
+            logger.info(f"TextExtractor test passed")
             logger.info(f"   Extracted: '{text}'")
             logger.info(f"   Confidence: {confidence:.2f}")
         else:
-            logger.warning("⚠️  No text extracted (this may be normal for synthetic test)")
+            logger.warning("No text extracted (this may be normal for synthetic test)")
         
         return True
         
     except Exception as e:
-        logger.error(f"❌ TextExtractor test failed: {e}", exc_info=True)
+        logger.error(f"TextExtractor test failed: {e}", exc_info=True)
         logger.error("   Make sure paddleocr is installed: pip install paddleocr paddlepaddle")
         return False
 
@@ -135,21 +144,21 @@ def test_geometry_utils():
         rectified, metadata = GeometryUtils.extract_and_preprocess_obb(
             test_image, obb, padding=5, preprocess=True
         )
-        
-        logger.info(f"✅ GeometryUtils test passed!")
+
+        logger.info(f"GeometryUtils test passed")
         logger.info(f"   Rectified size: {rectified.shape}")
         logger.info(f"   Original rotation: {metadata.get('original_rotation', 'N/A')}")
         
         return True
         
     except Exception as e:
-        logger.error(f"❌ GeometryUtils test failed: {e}", exc_info=True)
+        logger.error(f"GeometryUtils test failed: {e}", exc_info=True)
         return False
 
 
 def main():
     """Run all tests."""
-    logger.info("\n" + "🧪 HVAC Cortex - Service Tests")
+    logger.info("\n" + "HVAC AI - Service Tests")
     logger.info("=" * 60 + "\n")
     
     results = {
@@ -164,17 +173,17 @@ def main():
     logger.info("=" * 60)
     
     for service, passed in results.items():
-        status = "✅ PASS" if passed else "❌ FAIL"
+        status = "PASS" if passed else "FAIL"
         logger.info(f"{service:20s} {status}")
     
     all_passed = all(results.values())
     
     logger.info("=" * 60)
     if all_passed:
-        logger.info("🎉 All tests passed!")
+        logger.info("All tests passed")
         return 0
     else:
-        logger.error("❌ Some tests failed")
+        logger.error("Some tests failed")
         return 1
 
 

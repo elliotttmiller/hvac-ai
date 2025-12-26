@@ -18,6 +18,7 @@ Design Philosophy:
 
 import logging
 import os
+import sys
 import numpy as np
 import cv2
 import base64
@@ -32,6 +33,12 @@ try:
     from ray.serve import Application
 except ImportError:
     raise RuntimeError("Ray Serve not installed. Install with: pip install ray[serve]")
+
+# Ensure the repository root is on sys.path so top-level `core` package resolves
+# when this module is executed from the services folder or by Ray.
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 # Local imports
 from core.services.object_detector import ObjectDetector
@@ -398,7 +405,8 @@ def entrypoint():
         # Try parent directory
         default_model = os.path.join(os.path.dirname(os.getcwd()), 'ai_model', 'best.pt')
     
-    model_path = os.getenv('YOLO_MODEL_PATH', default_model)
+    # Prefer MODEL_PATH env var; fall back to legacy YOLO_MODEL_PATH for compatibility
+    model_path = os.getenv('MODEL_PATH') or os.getenv('YOLO_MODEL_PATH') or default_model
     
     conf_threshold = float(os.getenv('CONF_THRESHOLD', '0.5'))
     

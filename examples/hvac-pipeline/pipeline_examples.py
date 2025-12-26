@@ -214,7 +214,7 @@ def example_api_usage():
     print("=" * 80)
     
     print("Start the server:")
-    print("  cd services/hvac-analysis")
+    print("  cd services/hvac-ai")
     print("  python hvac_analysis_service.py")
     print()
     

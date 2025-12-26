@@ -36,7 +36,7 @@ An enterprise-grade platform combining Next.js frontend with Python AI services 
 ```bash
 # 1. Install dependencies
 npm install
-cd services/hvac-analysis && pip install -r requirements.txt && cd ..
+cd services/hvac-ai && pip install -r requirements.txt && cd ..
 
 # 2. Configure environment
 cp .env.example .env.local
@@ -51,7 +51,7 @@ python scripts/start_unified.py --mode ray-serve
 ```bash
 # 1. Install dependencies
 npm install
-cd services/hvac-analysis && pip install -r requirements.txt && cd ..
+cd services/hvac-ai && pip install -r requirements.txt && cd ..
 
 # 2. Configure environment
 cp .env.example .env
@@ -59,7 +59,7 @@ cp .env.example .env
 
 # 3. Run development servers
 npm run dev                      # Frontend (port 3000)
-cd services/hvac-analysis && python hvac_analysis_service.py  # Backend (port 8000)
+python services/hvac_unified_service.py  # Backend (port 8000)
 ```
 
 ### New Architecture: HVAC Cortex
@@ -125,14 +125,13 @@ hvac-ai/
 │   ├── hvac-domain/      # System validation & relationships
 │   ├── hvac-document/    # Document processing & enhancement
 │   └── gateway/          # API gateway (future)
-├── services/hvac-analysis/        # Backend (FastAPI/Python)
-│   ├── core/              # Core business logic
-│   │   ├── ai/           # AI models and inference
-│   │   ├── vlm/          # 🆕 Vision-Language Model system
-│   │   ├── document/     # Document processing
-│   │   ├── estimation/   # Cost estimation
-│   │   └── location/     # Location intelligence
-│   └── hvac_analysis_service.py  # Main API service
+├── services/hvac-analysis/        # DEPRECATED: replaced by services/hvac-ai (see migration notes)
+│   └── (legacy files migrated to `services/hvac-ai`)
+├── services/hvac-ai/             # Current backend services (FastAPI/Python)
+│   ├── hvac_unified_service.py   # Unified FastAPI entrypoint
+│   ├── object_detector_service.py
+│   ├── text_extractor_service.py
+│   └── utils/                    # Geometry and helper utilities
 ├── docs/                   # Documentation
 │   ├── adr/               # 🆕 Architecture Decision Records
 │   └── HVAC_REFACTORING_GUIDE.md  # 🆕 Refactoring documentation

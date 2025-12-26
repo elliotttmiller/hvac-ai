@@ -96,8 +96,24 @@ const InferenceAnalysisInner = function InferenceAnalysis({ initialImage, initia
     if (typeof window === 'undefined' || !uploadedImage) return;
 
     const img = new Image();
+    // Support either a File/Blob or a blob/url string being passed in.
+    // If we created the blob URL here we will revoke it on cleanup; if the
+    // caller passed a preview URL we must not revoke it.
+    let url: string;
+    let createdUrl = false;
+    try {
+      if (typeof uploadedImage === 'string') {
+        url = uploadedImage;
+      } else {
+        url = URL.createObjectURL(uploadedImage);
+        createdUrl = true;
+      }
+    } catch (e) {
+      console.error('Failed to create object URL for uploaded image', e);
+      return;
+    }
+
     // don't set crossOrigin for blob/object URLs (can cause failures)
-    const url = URL.createObjectURL(uploadedImage);
     img.src = url;
     imageRef.current = img;
 
@@ -165,7 +181,7 @@ const InferenceAnalysisInner = function InferenceAnalysis({ initialImage, initia
     };
 
     const handleError = (ev: Event | string) => {
-      console.error('Image load error', ev);
+      console.error('Image load error', ev, 'url=', url);
     };
 
     img.addEventListener('load', handleLoad);
@@ -176,7 +192,10 @@ const InferenceAnalysisInner = function InferenceAnalysis({ initialImage, initia
     window.addEventListener('resize', onWin);
 
     return () => {
-      URL.revokeObjectURL(url);
+      // Only revoke the blob URL if we created it here.
+      if (createdUrl) {
+        try { URL.revokeObjectURL(url); } catch {}
+      }
       img.removeEventListener('load', handleLoad);
       img.removeEventListener('error', handleError as EventListener);
       window.removeEventListener('resize', onWin);
@@ -443,6 +462,26 @@ const InferenceAnalysisInner = function InferenceAnalysis({ initialImage, initia
     });
   }, [drawBackground, drawOverlay]);
 
+  // Attach a non-passive native wheel listener so we can call preventDefault
+  // without triggering the browser warning about passive listeners.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    const onWheelNative = (e: WheelEvent) => {
+      // prevent page from scrolling while zooming the canvas
+      try { e.preventDefault(); } catch {}
+      if (!uploadedImage) return;
+      const delta = (e as WheelEvent).deltaY * -0.001;
+      setZoom(z => Math.min(Math.max(0.5, z + delta), 4));
+    };
+
+    el.addEventListener('wheel', onWheelNative, { passive: false });
+    return () => {
+      try { el.removeEventListener('wheel', onWheelNative); } catch {}
+    };
+  }, [uploadedImage]);
+
   const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
     if (!uploadedImage) return;
@@ -543,7 +582,6 @@ const InferenceAnalysisInner = function InferenceAnalysis({ initialImage, initia
         <div 
           ref={containerRef}
           className="flex-1 bg-slate-900 relative overflow-hidden cursor-move"
-          onWheel={handleWheel}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={() => setIsDragging(false)}

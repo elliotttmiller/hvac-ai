@@ -9,21 +9,21 @@ This document confirms the complete implementation of all tasks specified in `pr
 ## ✅ Track A: Backend Infrastructure (Ray Serve)
 
 ### Task 1.1: Inference Graph Orchestration ✅
-**File:** `services/hvac-analysis/core/inference_graph.py`
+**File:** `services/hvac-ai/inference_graph.py`
 - ✅ Defined Ray Serve deployment graph
 - ✅ Implemented fractional GPU allocation (40% + 30%)
 - ✅ Ensured async ingress node for non-blocking requests
 - **Lines:** 389 total, fully implemented
 
 ### Task 1.2: ObjectDetector Service ✅
-**File:** `services/hvac-analysis/core/services/object_detector.py`
+**File:** `services/hvac-ai/object_detector_service.py`
 - ✅ Wrapped YOLOv11 logic with universal naming
 - ✅ Loads model once during `__init__`
 - ✅ Returns raw OBB data (center, width, height, rotation)
 - **Lines:** 239 total, fully implemented
 
 ### Task 1.3: TextExtractor Service ✅
-**File:** `services/hvac-analysis/core/services/text_extractor.py`
+**File:** `services/hvac-ai/text_extractor_service.py`
 - ✅ Wrapped PaddleOCR logic with universal naming
 - ✅ Initialized with `use_angle_cls=False`
 - ✅ Supports batch processing (accepts list of crops)
@@ -34,7 +34,7 @@ This document confirms the complete implementation of all tasks specified in `pr
 ## ✅ Track B: The Intelligence Logic
 
 ### Task 2.1: GeometryUtils Module ✅
-**File:** `services/hvac-analysis/core/utils/geometry.py`
+**File:** `services/hvac-ai/utils/geometry.py`
 - ✅ Accepts OBB parameters (x, y, w, h, rotation) + Original Image
 - ✅ Calculates 4 corner points from OBB
 - ✅ Warps/rotates crop to be perfectly horizontal (0 degrees)
@@ -48,7 +48,7 @@ This document confirms the complete implementation of all tasks specified in `pr
 - `extract_and_preprocess_obb()` - Complete pipeline
 
 ### Task 2.2: Selective Inference Logic ✅
-**File:** `services/hvac-analysis/core/inference_graph.py` (lines 272-280)
+**File:** `services/hvac-ai/inference_graph.py` (lines 272-280)
 - ✅ Defined `TEXT_RICH_CLASSES = {'id_letters', 'tag_number', 'text_label', 'label', 'text', 'tag'}`
 - ✅ Implemented filtering in Fusion Layer
 - ✅ Only triggers TextExtractor for matching classes
@@ -94,43 +94,20 @@ export interface Segment {
 - `scripts/start_ray_serve.py` - Ray Serve launcher
 - `scripts/start_unified.py` - Unified platform launcher
 
-**Features:**
-- ✅ Launch Ray Serve: `serve run core.inference_graph:entrypoint`
-- ✅ Launch Frontend: `npm run dev`
-- ✅ Color-coded prefixes:
   - `[AI-ENGINE]` - Magenta (Ray Serve)
   - `[UI-CLIENT]` - Green (Next.js)
 - ✅ Health check before frontend startup
-- ✅ Graceful shutdown on Ctrl+C
-
-**Usage:**
-```bash
 # Ray Serve mode
 python scripts/start_unified.py --mode ray-serve
 
-# Legacy mode
-python scripts/start_unified.py --mode legacy
-```
-
 ---
-
 ## 📦 Dependencies Added
 
-**File:** `services/hvac-analysis/requirements.txt`
-
-```python
-# Ray Serve
-ray[serve]>=2.9.0
-
+**File:** `services/hvac-ai/requirements.txt`
 # PaddleOCR
 paddlepaddle>=2.5.0
 paddleocr>=2.7.0
-```
-
----
-
 ## 📚 Documentation Created
-
 1. **RAY_SERVE_ARCHITECTURE.md** (8,006 characters)
    - Complete architecture overview
    - API usage examples
@@ -145,7 +122,6 @@ paddleocr>=2.7.0
 
 3. **scripts/test_services.py** (5,280 characters)
    - Independent service testing
-   - ObjectDetector validation
    - TextExtractor validation
    - GeometryUtils validation
 
@@ -172,63 +148,37 @@ paddleocr>=2.7.0
 
 ---
 
-## 🎨 Design Standards Compliance
 
 ### ✅ Universal Naming (DDD)
 
 **Correct Usage:**
-- `ObjectDetector` (not `YoloService`)
-- `TextExtractor` (not `PaddleOCRWrapper`)
-- `GeometryUtils` (not `OBBTransformer`)
-- `BlueprintViewer` (used in types, not `DeepZoomInferenceAnalysis`)
-
 **Why?** Tool-agnostic naming allows easy model swapping without codebase changes.
-
----
-
-## 📊 Implementation Statistics
 
 | Metric | Value |
 |--------|-------|
 | New Files Created | 13 |
-| Files Modified | 4 |
 | Lines of Code Added | ~2,800 |
 | Documentation Added | ~21,000 chars |
 | Tests Created | 3 test functions |
 
 ### Files Created
-1. `services/hvac-analysis/core/inference_graph.py`
-2. `services/hvac-analysis/core/services/__init__.py`
-3. `python-services/core/services/object_detector.py`
-4. `python-services/core/services/text_extractor.py`
-5. `python-services/core/utils/__init__.py`
-6. `python-services/core/utils/geometry.py`
+1. `services/hvac-ai/inference_graph.py`
+2. `services/hvac-ai/__init__.py`
+3. `services/hvac-ai/object_detector_service.py`
+4. `services/hvac-ai/text_extractor_service.py`
+5. `services/hvac-ai/utils/__init__.py`
+6. `services/hvac-ai/utils/geometry.py`
 7. `scripts/start_ray_serve.py`
 8. `scripts/start_unified.py`
-9. `scripts/test_services.py`
 10. `src/types/domain.ts`
 11. `RAY_SERVE_ARCHITECTURE.md`
 12. `PROOF_OF_COMPLETION.md`
 13. This summary document
-
-### Files Modified
-1. `python-services/requirements.txt`
-2. `src/types/analysis.ts`
-3. `src/types/deep-zoom.ts`
-4. `src/components/viewer/DeepZoomViewer.tsx`
-5. `README.md`
-
 ---
-
 ## 🚀 Ready for Testing
 
 ### Unit Tests Ready
-```bash
-python scripts/test_services.py
-```
-
 ### Integration Test Ready
-```bash
 # Start platform
 python scripts/start_unified.py --mode ray-serve
 

@@ -9,8 +9,8 @@ This document summarizes the successful migration and optimization of the HVAC s
 
 ## What Was Migrated
 
-### From: `services/hvac-analysis/`
-The entire hvac-analysis directory (~50 files) was analyzed, categorized, and migrated to appropriate service directories.
+### From: `services/hvac-ai/`
+The original hvac-analysis content (now migrated) was analyzed, categorized, and migrated to appropriate service directories (see consolidation to `services/hvac-ai`).
 
 ### To: Consolidated Service Structure
 
@@ -43,7 +43,7 @@ The entire hvac-analysis directory (~50 files) was analyzed, categorized, and mi
 ### Before Migration
 ```
 services/
-├── hvac-analysis/          ~50 files (10,737 lines of code)
+├── hvac-ai/          ~50 files (10,737 lines of code)
 │   ├── core/
 │   │   ├── ai/             9 Python files
 │   │   ├── vlm/            8 Python files

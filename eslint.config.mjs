@@ -32,7 +32,7 @@ const eslintConfig = [
   // Suppress explicit-any in large legacy/third-party-like folders so
   // lint output focuses on the current development surface area.
   {
-    files: ["src/lib/**", "services/hvac-analysis/**", "python-services/**", "hvac-scripts/**"],
+  files: ["src/lib/**", "services/hvac-ai/**", "python-services/**", "hvac-scripts/**"],
     rules: {
       "@typescript-eslint/no-explicit-any": "off",
     },

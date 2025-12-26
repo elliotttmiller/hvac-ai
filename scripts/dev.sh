@@ -13,7 +13,7 @@ fi
 # Start backend in background
 echo ""
 echo "🐍 Starting Python backend service..."
-cd services/hvac-analysis
+cd services/hvac-ai
 
 if [ -d "venv" ]; then
     source venv/bin/activate
@@ -22,7 +22,7 @@ else
     exit 1
 fi
 
-python hvac_analysis_service.py &
+python ../../services/hvac_unified_service.py &
 BACKEND_PID=$!
 
 cd ..

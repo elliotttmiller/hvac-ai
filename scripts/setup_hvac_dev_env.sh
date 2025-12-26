@@ -60,7 +60,7 @@ fi
 
 echo ""
 echo "Installing Python dependencies..."
-cd services/hvac-analysis
+cd services/hvac-ai
 
 # Create virtual environment if it doesn't exist
 if [ ! -d "venv" ]; then
@@ -116,9 +116,9 @@ echo ""
 echo "Validating HVAC-specific setup..."
 
 # Check for model directory
-if [ ! -d "services/hvac-analysis/models" ]; then
-    mkdir -p services/hvac-analysis/models
-    print_info "Created services/hvac-analysis/models directory. Please download or copy your inference model (YOLO) into services/hvac-analysis/models/"
+if [ ! -d "services/hvac-ai/models" ]; then
+    mkdir -p services/hvac-ai/models
+    print_info "Created services/hvac-ai/models directory. Please download or copy your inference model (YOLO) into services/hvac-ai/models/"
 fi
 
 # Check for HVAC datasets directory

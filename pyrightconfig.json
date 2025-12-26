@@ -1,0 +1,7 @@
+{
+  "extraPaths": [
+    "./services/hvac-ai",
+    "."
+  ],
+  "typeCheckingMode": "basic"
+}

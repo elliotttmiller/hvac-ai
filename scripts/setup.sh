@@ -37,7 +37,7 @@ npm install
 # Setup Python environment
 echo ""
 echo "🐍 Setting up Python environment..."
-cd services/hvac-analysis
+cd services/hvac-ai
 
 if [ ! -d "venv" ]; then
     echo "Creating Python virtual environment..."
@@ -63,8 +63,8 @@ fi
 # Create necessary directories
 echo ""
 echo "📁 Creating necessary directories..."
-mkdir -p services/hvac-analysis/models
-mkdir -p services/hvac-analysis/logs
+mkdir -p services/hvac-ai/models
+mkdir -p services/hvac-ai/logs
 mkdir -p datasets
 
 echo ""
@@ -72,8 +72,8 @@ echo "✅ Setup complete!"
 echo ""
 echo "Next steps:"
 echo "1. Update .env.local with your configuration"
-echo "2. Place your inference model at services/hvac-analysis/models/<your_model_file>.pt (YOLO/Ultralytics recommended)"
+echo "2. Place your inference model at services/hvac-ai/models/<your_model_file>.pt (YOLO/Ultralytics recommended)"
 echo "3. Run 'npm run dev' to start the frontend"
-echo "4. Run 'cd services/hvac-analysis && python hvac_analysis_service.py' to start the backend"
+echo "4. Run 'python services/hvac_unified_service.py' to start the backend (or see services/hvac-ai for service modules)"
 echo ""
 echo "📚 See docs/GETTING_STARTED.md for more information"

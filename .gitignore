@@ -52,6 +52,12 @@ build/
 .pytest_cache/
 *.pyc
 
+# Virtual environments (explicitly ignore common names and nested venvs)
+.venv/
+.venv
+*/venv/
+services/**/venv/
+
 # vercel
 .vercel
 

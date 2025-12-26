@@ -14,8 +14,9 @@ import json
 import os
 
 # --- CONFIGURATION ---
-# UPDATE THIS to your local .pt file path
-MODEL_PATH = r"D:\AMD\hvac-ai\ai_model\models\yolo11m_run_v10\weights\best.pt"
+# MODEL_PATH can be overridden via the MODEL_PATH env var (or .env.local)
+# Update this default to your fallback path if you prefer a hardcoded default.
+MODEL_PATH = os.environ.get('MODEL_PATH')
 PORT = 8000
 CONF_THRES = 0.50
 IOU_THRES = 0.45
@@ -46,7 +47,9 @@ HALF = False
 
 # Dev mode: skip loading heavy ML stack
 # Can be enabled via environment variable SKIP_MODEL=1 or CLI arg --no-model
-SKIP_MODEL = os.environ.get("SKIP_MODEL", "0") == "1" or any(a in ("--no-model", "--skip-model") for a in sys.argv)
+SKIP_MODEL = os.environ.get("SKIP_MODEL", "0") == "1"
+# Optional: force CPU even if GPU is available
+FORCE_CPU = os.environ.get("FORCE_CPU", "0") == "1"
 
 
 @app.on_event("startup")
@@ -56,11 +59,18 @@ async def load_model():
         logger.warning("SKIP_MODEL is enabled — skipping heavy ML imports and model load (dev mode).")
         return
 
+    # Validate MODEL_PATH early and fail fast if missing to avoid silent runtime
+    logger.info(f"Resolved MODEL_PATH={MODEL_PATH}")
+    if not MODEL_PATH:
+        logger.error("MODEL_PATH is not set. Set MODEL_PATH in your environment or .env.local to point to your trained weights.")
+        # Fail fast so the launcher can detect the problem
+        raise SystemExit(1)
+
     if not os.path.exists(MODEL_PATH):
         logger.error(f"❌ Model not found at: {MODEL_PATH}")
-        # We don't exit here to keep the server alive for health checks,
-        # but inference will fail.
-        return
+        logger.error("Please update MODEL_PATH in .env.local or export MODEL_PATH before starting the service.")
+        # Fail fast so the launcher can detect the problem
+        raise SystemExit(1)
 
     logger.info(f"Loading model from {MODEL_PATH}...")
     try:
@@ -73,18 +83,32 @@ async def load_model():
         torch = _torch
         YOLO = _YOLO
 
-        HALF = torch.cuda.is_available()
+        # GPU availability
+        gpu_available = torch.cuda.is_available()
+        HALF = gpu_available and not FORCE_CPU
+
+        try:
+            torch_info = f"torch={torch.__version__}, torch.cuda={getattr(torch.version, 'cuda', None)}"
+        except Exception:
+            torch_info = "torch info unavailable"
+        logger.info(f"PyTorch info: {torch_info}; FORCE_CPU={FORCE_CPU}")
 
         model = YOLO(MODEL_PATH)
-        if torch.cuda.is_available():
-            model.to('cuda')
-            logger.info(f"✅ Model loaded on GPU: {torch.cuda.get_device_name(0)}")
+        if gpu_available and not FORCE_CPU:
+            try:
+                model.to('cuda')
+                logger.info(f"✅ Model loaded on GPU: {torch.cuda.get_device_name(0)}")
+            except Exception as e:
+                logger.warning(f"Could not move model to CUDA, falling back to CPU: {e}")
         else:
-            logger.warning("⚠️ GPU not found. Running on CPU (Slower).")
-        
-        # Warmup
-        model.predict(np.zeros((640,640,3), dtype=np.uint8), verbose=False, half=HALF)
-        logger.info("🔥 Model Warmup Complete")
+            logger.warning("⚠️ Running on CPU (FORCE_CPU set or CUDA not available).")
+
+        # Warmup (may be heavy on CPU)
+        try:
+            model.predict(np.zeros((640,640,3), dtype=np.uint8), verbose=False, half=HALF)
+            logger.info("🔥 Model Warmup Complete")
+        except Exception as e:
+            logger.warning(f"Model warmup failed (this may be expected on CPU): {e}")
     except Exception as e:
         logger.error(f"Failed to load model: {e}")
 

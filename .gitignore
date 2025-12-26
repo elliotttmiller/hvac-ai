@@ -90,6 +90,10 @@ python-services/models/*.pth
 python-services/models/*.pt
 *.weights
 *.ckpt
+# Local model artifacts (ai_model)
+/ai_model/models/
+ai_model/models/*.pt
+ai_model/models/*.pth
 
 # Dataset images and extracted files
 datasets/train/

@@ -54,37 +54,7 @@ export default function DocumentsPage() {
 
       <HVACBlueprintUploader onAnalysisComplete={(result) => console.log('Analysis complete:', result)} />
 
-      <Card>
-        <CardHeader>
-          <CardTitle>How It Works</CardTitle>
-          <CardDescription>Simple 3-step process for HVAC blueprint analysis</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            <div className="flex gap-4">
-              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-bold">1</div>
-              <div>
-                <h3 className="font-semibold mb-1">Upload Blueprint</h3>
-                <p className="text-sm text-muted-foreground">Drag and drop or select your HVAC blueprint file.</p>
-              </div>
-            </div>
-            <div className="flex gap-4">
-              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-bold">2</div>
-              <div>
-                <h3 className="font-semibold mb-1">AI Analysis</h3>
-                <p className="text-sm text-muted-foreground">Our AI engine detects HVAC components and extracts specifications.</p>
-              </div>
-            </div>
-            <div className="flex gap-4">
-              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-bold">3</div>
-              <div>
-                <h3 className="font-semibold mb-1">Generate Estimate</h3>
-                <p className="text-sm text-muted-foreground">Review components and generate cost estimates with regional adjustments.</p>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      {/* 'How It Works' section removed per UX request to streamline the page */}
     </div>
   );
 }

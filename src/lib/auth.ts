@@ -5,9 +5,13 @@
 
 export const authOptions = {
 	// provider-specific options would go here if enabled. Keep minimal.
+	// NextAuth expects `providers` to be iterable; provide a safe empty
+	// array here so the runtime handler does not throw when auth is not
+	// fully configured in local/dev environments.
+	providers: [],
 	session: {
 		strategy: 'jwt'
-	}
+	},
 };
 
 // NOTE: If you use next-auth in production, replace this stub with the

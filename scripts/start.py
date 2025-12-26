@@ -69,7 +69,26 @@ def main():
 
     # 1. Start Backend (Python/FastAPI)
     # Cyan Color for Backend
+    # Load .env.local (if present) and forward variables to the backend process
     backend_env = os.environ.copy()
+    env_file = os.path.join(REPO_ROOT, ".env.local")
+    if os.path.exists(env_file):
+        try:
+            with open(env_file, 'r', encoding='utf-8') as f:
+                for raw in f:
+                    line = raw.strip()
+                    if not line or line.startswith('#'):
+                        continue
+                    if '=' not in line:
+                        continue
+                    key, val = line.split('=', 1)
+                    key = key.strip()
+                    val = val.strip().strip('"').strip("'")
+                    # Only set if not already set in environment
+                    if key not in backend_env:
+                        backend_env[key] = val
+        except Exception as e:
+            print(f"{_ts()} [STARTUP] Failed to read .env.local: {e}")
     # Start backend from the scripts directory so relative imports / file paths
     # inside the backend script behave as expected.
     backend_proc = start_process(
@@ -128,8 +147,8 @@ def main():
         return False
 
     health_url = f"http://127.0.0.1:{PORT}/health"
-    print(f"{_ts()} [STARTUP] Waiting up to 30s for backend at {health_url}...")
-    ok = wait_for_backend_health(health_url, timeout=30.0, interval=0.5)
+    print(f"{_ts()} [STARTUP] Waiting up to 60s for backend at {health_url}...")
+    ok = wait_for_backend_health(health_url, timeout=60.0, interval=0.5)
     if not ok:
         print(f"{_ts()} [STARTUP] Backend failed health check; terminating.")
         # terminate backend and exit

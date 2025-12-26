@@ -61,25 +61,31 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      if (returnTopK) pythonFormData.append('return_top_k', returnTopK as string);
+    if (returnTopK) pythonFormData.append('return_top_k', returnTopK as string);
 
-      targetUrl = `${PYTHON_SERVICE_URL}/api/v1/segment`;
+    // The Python service in this repo exposes a single analyze endpoint
+    // at /api/hvac/analyze which accepts the same form fields (coords,
+    // prompt, grid_size) and supports streaming via ?stream=1. Use that
+    // endpoint for both streaming and non-streaming requests.
+    targetUrl = `${PYTHON_SERVICE_URL}/api/hvac/analyze`;
     } else {
       // Count request — backend expects optional 'grid_size' form field
       const gridSize = formData.get('grid_size') as string | null;
       if (gridSize) pythonFormData.append('grid_size', gridSize);
-      targetUrl = `${PYTHON_SERVICE_URL}/api/v1/count`;
+      targetUrl = `${PYTHON_SERVICE_URL}/api/hvac/analyze`;
     }
 
   // If the client asked for a streaming response, forward the upstream
   // streaming body directly to the caller (preserving content-type).
   if (wantsStream) {
     try {
+      // Forward the streaming request to the backend analyze endpoint with
+      // the streaming query param which the backend understands.
       const upstream = await fetch(
-        `${PYTHON_SERVICE_URL}/api/v1/analyze/stream`, 
-        { 
-          method: 'POST', 
-          body: pythonFormData, 
+        `${PYTHON_SERVICE_URL}/api/hvac/analyze?stream=1`,
+        {
+          method: 'POST',
+          body: pythonFormData,
           headers: { 'ngrok-skip-browser-warning': '69420' },
         }
       );
@@ -111,10 +117,10 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  const response = await fetch(targetUrl, { 
-    method: 'POST', 
-    body: pythonFormData, 
-    headers: { 'ngrok-skip-browser-warning': '69420' } 
+  const response = await fetch(targetUrl, {
+    method: 'POST',
+    body: pythonFormData,
+    headers: { 'ngrok-skip-browser-warning': '69420' }
   });
 
   // Read response safely: some endpoints (or ngrok) may return HTML on error

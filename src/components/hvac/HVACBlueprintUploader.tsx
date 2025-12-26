@@ -291,7 +291,7 @@ export default function HVACBlueprintUploader({ onAnalysisComplete }: HVACBluepr
   };
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto">
+    <div className="space-y-6 max-w-7xl mx-auto">
       <Card className="border-2 shadow-sm">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -461,7 +461,7 @@ export default function HVACBlueprintUploader({ onAnalysisComplete }: HVACBluepr
             </CardHeader>
             
             <CardContent className="p-0">
-              <div className="bg-slate-900 min-h-[500px] relative">
+              <div className="bg-slate-900 min-h-[640px] relative">
                 <InferenceAnalysis
                   initialImage={uploadedFile?.file ?? null}
                   initialSegments={result.segments ?? undefined}

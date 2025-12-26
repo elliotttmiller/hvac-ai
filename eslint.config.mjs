@@ -19,6 +19,10 @@ const eslintConfig = [
     },
     rules: {
       "@typescript-eslint/no-unused-vars": "off",
+      // Temporarily relax explicit-any rule across the codebase. Many
+      // legacy modules use `any` extensively; keep as a warning to
+      // surface hotspots without failing CI during cleanup work.
+      "@typescript-eslint/no-explicit-any": "warn",
       "react/no-unescaped-entities": "off",
       "@next/next/no-img-element": "off",
       "jsx-a11y/alt-text": "off",

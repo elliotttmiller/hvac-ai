@@ -25,6 +25,9 @@ export interface Segment {
   points?: number[][];
   // Optional rotation in radians (duplicate to obb.rotation for convenience)
   rotation?: number;
+  // Text content extracted via OCR (multi-modal data)
+  textContent?: string;
+  textConfidence?: number;
   // Display hints used by the UI
   displayFormat?: 'bbox' | 'polygon' | 'obb';
   displayMask?: unknown | null;

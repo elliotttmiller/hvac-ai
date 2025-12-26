@@ -51,6 +51,9 @@ export interface EditableAnnotation {
   };
   // Optional precomputed polygon corner points for OBB rendering (image coordinates)
   points?: number[][];
+  // Optional extracted text content from OCR (multi-modal data)
+  textContent?: string;
+  textConfidence?: number;
   isDirty: boolean;
   isNew: boolean;
 }

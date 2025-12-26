@@ -332,20 +332,21 @@ export default function InferenceAnalysis({ initialImage, initialSegments, initi
       const isMatch = matchesFilter && matchesHighlight;
       if (!matchesFilter) {
         // draw faint outline for non-matches (so user can still see context)
-        ctx.lineWidth = 1;
-        ctx.strokeStyle = 'rgba(200,200,200,0.08)';
+        ctx.lineWidth = 0.8;
+        ctx.strokeStyle = 'rgba(200,200,200,0.06)';
         ctx.stroke(path);
       }
 
       if (isMatch || !filterCategory) {
         // emphasis for hovered or highlighted
-        ctx.lineWidth = isHovered || (highlightedCategory && seg.label === highlightedCategory) ? 3 : 2;
+        // Use thinner lines for a clean, sleek look; slightly thicker on hover
+        ctx.lineWidth = isHovered || (highlightedCategory && seg.label === highlightedCategory) ? 2.0 : 1.2;
         ctx.strokeStyle = color;
         ctx.stroke(path);
 
         if (showFill || isHovered) {
           ctx.fillStyle = color;
-          ctx.globalAlpha = isHovered ? 0.35 : 0.15;
+          ctx.globalAlpha = isHovered ? 0.22 : 0.08;
           ctx.fill(path);
           ctx.globalAlpha = 1.0;
         }

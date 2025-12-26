@@ -51,7 +51,7 @@ const DrawingViewer: React.FC<DrawingViewerProps> = ({ imageSrc, detections }) =
 
           // Sleek Box Style
           ctx.strokeStyle = '#00f0ff'; // Cyan
-          ctx.lineWidth = 2;
+          ctx.lineWidth = 1.2;
           ctx.shadowColor = '#00f0ff';
           ctx.shadowBlur = 10;
           

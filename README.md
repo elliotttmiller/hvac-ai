@@ -8,8 +8,10 @@ An enterprise-grade platform combining Next.js frontend with Python AI services 
 
 ### Core Capabilities
 - 🤖 **YOLOv11 Object Detection** - Fast and accurate bounding box detection for HVAC components
-- 📝 **Hybrid OCR + VLM** - 🆕 Advanced document processing with 92%+ accuracy (research-driven)
-- 🔄 **Semantic Caching** - 🆕 70% faster processing for similar blueprints
+- 🧠 **Multi-Modal AI Pipeline** - 🆕 Combined vision + OCR with Ray Serve distributed inference
+- 📐 **Geometric Intelligence** - 🆕 Automatic perspective correction for rotated text extraction
+- 📝 **Hybrid OCR + VLM** - Advanced document processing with 92%+ accuracy (research-driven)
+- 🔄 **Semantic Caching** - 70% faster processing for similar blueprints
 - 🔍 **HVAC System Analysis** - Relationship graphs and connectivity validation
 - 📋 **Code Compliance** - ASHRAE Standard 62.1 and SMACNA validation
 - 📐 **Multi-Format Support** - PDF, DWG, DXF, PNG, JPG, TIFF processing
@@ -17,6 +19,8 @@ An enterprise-grade platform combining Next.js frontend with Python AI services 
 - 🎯 **Domain Expertise** - HVAC-specific prompt engineering templates
 
 ### Technical Highlights
+- Distributed inference with Ray Serve (fractional GPU allocation)
+- Universal service architecture (Domain-Driven Design)
 - Fast bounding box detection optimized for HVAC components
 - GPU memory efficient (<8GB for large blueprints)
 - Real-time inference with streaming progress updates
@@ -26,6 +30,23 @@ An enterprise-grade platform combining Next.js frontend with Python AI services 
 - Comprehensive testing framework (85%+ coverage target)
 
 ## Quick Start
+
+### Option 1: Ray Serve Mode (Recommended for Production)
+
+```bash
+# 1. Install dependencies
+npm install
+cd python-services && pip install -r requirements.txt && cd ..
+
+# 2. Configure environment
+cp .env.example .env.local
+# Edit .env.local and set YOLO_MODEL_PATH to your model
+
+# 3. Run with Ray Serve (distributed inference)
+python scripts/start_unified.py --mode ray-serve
+```
+
+### Option 2: Legacy Mode (Development)
 
 ```bash
 # 1. Install dependencies
@@ -40,6 +61,20 @@ cp .env.example .env
 npm run dev                      # Frontend (port 3000)
 cd python-services && python hvac_analysis_service.py  # Backend (port 8000)
 ```
+
+### New Architecture: HVAC Cortex
+
+The platform now features a **distributed inference architecture** using Ray Serve:
+
+- 🏗️ **Ray Serve Infrastructure** - Scalable, distributed AI pipeline
+- 🧠 **Multi-Modal Analysis** - Combined vision (YOLO) + language (OCR) processing
+- 📐 **Geometric Intelligence** - Automatic rotation correction for text extraction
+- 🎯 **Selective Inference** - Smart routing based on detection classes
+- ⚡ **Fractional GPU** - Efficient resource allocation (40% + 30% split)
+
+**Learn More:**
+- [Ray Serve Architecture](RAY_SERVE_ARCHITECTURE.md) - Complete infrastructure guide
+- [Proof of Completion](PROOF_OF_COMPLETION.md) - Testing and validation guide
 
 ## Documentation
 

@@ -13,7 +13,10 @@ import {
   Maximize,
   Minimize,
   RotateCcw,
-  Upload
+  Upload,
+  Menu,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { useDropzone } from 'react-dropzone';
 
@@ -75,6 +78,7 @@ export default function InferenceAnalysis({ initialImage, initialSegments, initi
   const [labelDisplay, setLabelDisplay] = useState<'boxes'|'boxes-names'|'boxes-names-score'|'none'>('boxes-names-score');
   const [filterCategory, setFilterCategory] = useState<string | null>(null);
   const [highlightedCategory, setHighlightedCategory] = useState<string | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState<boolean>(true);
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
 
   const [zoom, setZoom] = useState(1);
@@ -147,11 +151,11 @@ export default function InferenceAnalysis({ initialImage, initialSegments, initi
         displayH = availableH;
         displayW = Math.round(displayH / aspect);
       }
-      // Prevent upsampling beyond image natural dimensions
-      displayW = Math.min(displayW, img.naturalWidth);
-      displayH = Math.min(displayH, img.naturalHeight);
+  // Allow upscaling so the image can fill the available viewport.
+  // No artificial cap: allow display size to grow to fill container.
+  // (If you want a limit to avoid extreme pixelation, re-add a MAX_UPSCALE clamp here.)
 
-      scaleRef.current = displayW / img.naturalWidth;
+  scaleRef.current = displayW / img.naturalWidth;
 
       resizeCanvasToImage(bg, displayW, displayH);
       resizeCanvasToImage(overlay, displayW, displayH);
@@ -514,9 +518,11 @@ export default function InferenceAnalysis({ initialImage, initialSegments, initi
     );
   }
 
+  const mainColClass = sidebarOpen ? 'lg:col-span-4' : 'lg:col-span-5';
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 h-full">
-      <Card className="lg:col-span-4 overflow-hidden flex flex-col h-[760px]">
+      <Card className={`${mainColClass} overflow-hidden flex flex-col h-[760px] transition-all duration-200`}>
         <CardHeader className="py-3 px-4 border-b flex flex-row items-center justify-between bg-slate-50">
           <CardTitle className="text-sm font-medium flex items-center gap-2">
             <Scan className="h-4 w-4" /> Visual Inspection
@@ -560,16 +566,34 @@ export default function InferenceAnalysis({ initialImage, initialSegments, initi
               <p className="text-xs">Confidence: {(segments[hoveredIndex].score * 100).toFixed(1)}%</p>
             </div>
           )}
+          {/* Floating sidebar toggle - visible even when collapsed; placed inside the viewer so it's always reachable */}
+          <button
+            onClick={() => setSidebarOpen(s => !s)}
+            aria-label={sidebarOpen ? 'Collapse components' : 'Open components'}
+            className="absolute right-4 top-1/3 z-40 h-10 w-10 rounded-full bg-white/6 backdrop-blur-sm border border-white/8 flex items-center justify-center hover:bg-white/10 text-white transition-colors"
+          >
+            {sidebarOpen ? <ChevronRight className="h-5 w-5 text-white" /> : <Menu className="h-5 w-5 text-white" />}
+          </button>
         </div>
       </Card>
 
-      <Card className="lg:col-span-1 flex flex-col h-[600px]">
-        <CardHeader className="py-3 border-b">
-          <CardTitle className="text-sm font-medium flex items-center gap-2">
-            <FileBarChart className="h-4 w-4" /> Components
-          </CardTitle>
-        </CardHeader>
-        <div className="flex-1 overflow-y-auto p-4 space-y-2">
+      {sidebarOpen ? (
+        <Card className="lg:col-span-1 flex flex-col h-[600px] transition-all duration-200">
+          <CardHeader className="py-3 border-b bg-white/6 backdrop-blur-sm">
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <FileBarChart className="h-4 w-4" /> Components
+            </CardTitle>
+            <div className="ml-auto">
+              <button
+                aria-label="Collapse components"
+                onClick={() => setSidebarOpen(false)}
+                className="text-xs px-2 py-1 rounded bg-white/6 hover:bg-white/8 border border-transparent"
+              >
+                Collapse
+              </button>
+            </div>
+          </CardHeader>
+          <div className="flex-1 overflow-y-auto p-4 space-y-2 bg-white/3 backdrop-blur-sm">
           {countResult ? (
             Object.entries(countResult.counts_by_category)
                   .sort(([,a], [,b]) => b - a)
@@ -598,8 +622,20 @@ export default function InferenceAnalysis({ initialImage, initialSegments, initi
           ) : (
             <div className="text-center text-slate-400 mt-10">No components detected</div>
           )}
+          </div>
+        </Card>
+      ) : (
+        // Collapsed toggle button (small pill on the right)
+        <div className="lg:col-span-1 flex items-start justify-end pr-2">
+          <button
+            aria-label="Open components"
+            onClick={() => setSidebarOpen(true)}
+            className="mt-4 mr-2 px-3 py-1 rounded-full bg-white/8 backdrop-blur-sm border border-transparent hover:bg-white/12 text-sm"
+          >
+            Components
+          </button>
         </div>
-      </Card>
+      )}
     </div>
   );
 }

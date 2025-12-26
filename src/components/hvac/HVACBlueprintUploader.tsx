@@ -64,6 +64,7 @@ export default function HVACBlueprintUploader({ onAnalysisComplete }: HVACBluepr
   const router = useRouter();
   
   const [uploadedFile, setUploadedFile] = useState<UploadedFile | null>(null);
+  const [uploaderExpanded, setUploaderExpanded] = useState<boolean>(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -294,73 +295,134 @@ export default function HVACBlueprintUploader({ onAnalysisComplete }: HVACBluepr
     <div className="space-y-6 max-w-7xl mx-auto">
       <Card className="border-2 shadow-sm">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Upload className="h-5 w-5 text-primary" />
-            Upload HVAC Blueprint
-          </CardTitle>
-          <CardDescription>
-            Supports PDF, DWG, DXF, PNG, JPG (max 500MB)
-          </CardDescription>
+          <div className="flex items-center justify-between w-full">
+            <div className="flex items-center gap-2">
+              <Upload className="h-5 w-5 text-primary" />
+              <div>
+                <CardTitle className="text-sm">Upload HVAC Blueprint</CardTitle>
+                <CardDescription className="text-xs">Supports PDF, DWG, DXF, PNG, JPG (max 500MB)</CardDescription>
+              </div>
+            </div>
+            <div>
+              <Button variant="ghost" size="sm" onClick={() => setUploaderExpanded(e => !e)}>
+                {uploaderExpanded ? 'Collapse' : 'Details'}
+              </Button>
+            </div>
+          </div>
         </CardHeader>
-        
-        <CardContent className="space-y-6">
+
+        <CardContent className="space-y-4">
           {!uploadedFile ? (
             <div 
               {...getRootProps()} 
               className={`
-                relative border-2 border-dashed rounded-xl p-10 text-center cursor-pointer transition-all duration-200
+                relative border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-all duration-150
                 ${isDragActive 
                   ? 'border-primary bg-primary/5 scale-[1.01]' 
-                  : 'border-slate-200 hover:border-primary/50 hover:bg-slate-50'
+                  : 'border-slate-200 hover:border-primary/40 hover:bg-slate-50'
                 }
               `}
             >
               <input {...getInputProps()} />
-              <div className="flex flex-col items-center gap-3">
-                <div className="p-4 bg-slate-100 rounded-full">
-                  <Upload className="h-8 w-8 text-slate-400" />
+              <div className="flex items-center gap-4 justify-center">
+                <div className="p-3 bg-slate-100 rounded-md">
+                  <Upload className="h-6 w-6 text-slate-400" />
                 </div>
-                <div>
-                  <p className="text-lg font-semibold text-slate-700">
+                <div className="text-left">
+                  <p className="text-base font-medium text-slate-700">
                     {isDragActive ? 'Drop blueprint now' : 'Click to upload or drag & drop'}
                   </p>
-                  <p className="text-sm text-slate-500 mt-1">
+                  <p className="text-xs text-slate-500 mt-0.5">
                     High-resolution images work best for OBB detection
                   </p>
                 </div>
               </div>
             </div>
           ) : (
-            <div className="border rounded-xl overflow-hidden bg-slate-50">
-              <div className="p-4 border-b flex items-center justify-between bg-white">
-                <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 bg-blue-100 rounded-lg flex items-center justify-center text-blue-600">
-                    <FileText size={20} />
-                  </div>
-                  <div>
-                    <p className="font-medium text-slate-900">{uploadedFile.file.name}</p>
+            <div className="flex items-center gap-4 p-3 border rounded-lg bg-white">
+              <div className="flex-shrink-0 h-14 w-14 bg-slate-100 rounded overflow-hidden flex items-center justify-center">
+                {uploadedFile.file.type.startsWith('image/') ? (
+                  <img src={uploadedFile.previewUrl} alt="thumb" className="h-full w-full object-cover" />
+                ) : (
+                  <div className="text-slate-400"><FileText size={18} /></div>
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between">
+                  <div className="truncate">
+                    <p className="font-medium text-slate-900 truncate">{uploadedFile.file.name}</p>
                     <p className="text-xs text-slate-500">{(uploadedFile.file.size / (1024 * 1024)).toFixed(2)} MB</p>
                   </div>
-                </div>
-                <Button variant="ghost" size="icon" onClick={handleRemoveFile} className="text-slate-400 hover:text-red-500">
-                  <X size={18} />
-                </Button>
-              </div>
-              
-              {uploadedFile.file.type.startsWith('image/') && (
-                <div className="relative h-48 w-full bg-slate-100 flex items-center justify-center overflow-hidden">
-                  <img 
-                    src={uploadedFile.previewUrl} 
-                    alt="Preview" 
-                    className="h-full w-full object-contain opacity-90" 
-                  />
-                  <div className="absolute bottom-2 right-2">
-                    <Badge variant="secondary" className="bg-white/90 backdrop-blur">
-                      <ImageIcon className="w-3 h-3 mr-1" /> Preview
-                    </Badge>
+                  <div className="flex items-center gap-2">
+                    <Button size="sm" onClick={() => setUploaderExpanded(e => !e)}>{uploaderExpanded ? 'Hide' : 'Preview'}</Button>
+                    <Button onClick={handleAnalyze} size="sm" className="font-semibold">Start AI</Button>
+                    <Button variant="ghost" size="icon" onClick={handleRemoveFile} className="text-slate-400 hover:text-red-500">
+                      <X size={16} />
+                    </Button>
                   </div>
                 </div>
-              )}
+                {uploaderExpanded && (
+                  <div className="mt-3 border rounded-md overflow-hidden">
+                    {uploadedFile.file.type.startsWith('image/') && (
+                      <div className="relative h-48 w-full bg-slate-100 flex items-center justify-center overflow-hidden">
+                        <img 
+                          src={uploadedFile.previewUrl} 
+                          alt="Preview" 
+                          className="h-full w-full object-contain opacity-95" 
+                        />
+                      </div>
+                    )}
+                    <div className="p-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div className="space-y-2">
+                        <Label htmlFor="projectId">Project ID</Label>
+                        <Input 
+                          id="projectId" 
+                          placeholder="e.g. PRJ-2024-001" 
+                          value={projectId} 
+                          onChange={e => setProjectId(e.target.value)}
+                          disabled={analyzing} 
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="location">Location</Label>
+                        <div className="relative">
+                          <MapPin className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+                          <Input 
+                            id="location" 
+                            className="pl-9" 
+                            placeholder="e.g. Chicago, IL" 
+                            value={location} 
+                            onChange={e => setLocation(e.target.value)}
+                            disabled={analyzing} 
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    <div className="p-3">
+                      {!analyzing ? (
+                        <Button onClick={handleAnalyze} size="lg" className="w-full font-semibold">
+                          <Wind className="mr-2 h-4 w-4" />
+                          Start AI Analysis
+                        </Button>
+                      ) : (
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between text-sm text-slate-600">
+                            <span className="flex items-center gap-2">
+                              <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                              {progress < 30 ? 'Uploading & Preprocessing...' : 'Running YOLOv11-OBB Inference...'}
+                            </span>
+                            <span className="font-mono">{Math.round(progress)}%</span>
+                          </div>
+                          <Progress value={progress} className="h-2" />
+                          <Button variant="outline" size="sm" onClick={handleCancel} className="w-full text-red-500 hover:text-red-600 hover:bg-red-50">
+                            Cancel Analysis
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
@@ -472,24 +534,35 @@ export default function HVACBlueprintUploader({ onAnalysisComplete }: HVACBluepr
                 />
               </div>
 
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-px bg-slate-200 border-t">
-                <div className="bg-white p-4">
-                  <p className="text-sm text-slate-500">Total Components</p>
-                  <p className="text-2xl font-bold text-slate-900">{result.total_components}</p>
+              {/* Sleek metric strip: Total, Unique, Avg Confidence, Top Category */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 bg-transparent border-t">
+                <div className="bg-white p-3 flex flex-col">
+                  <span className="text-xs text-slate-500">Total Components</span>
+                  <span className="text-lg font-semibold text-slate-900">{result.total_components}</span>
                 </div>
-                <div className="bg-white p-4">
-                  <p className="text-sm text-slate-500">Unique Categories</p>
-                  <p className="text-2xl font-bold text-slate-900">
-                    {Object.keys(result.counts_by_category || {}).length}
-                  </p>
+                <div className="bg-white p-3 flex flex-col">
+                  <span className="text-xs text-slate-500">Unique Categories</span>
+                  <span className="text-lg font-semibold text-slate-900">{Object.keys(result.counts_by_category || {}).length}</span>
                 </div>
-                <div className="bg-white p-4">
-                  <p className="text-sm text-slate-500">Confidence Score</p>
-                  <p className="text-2xl font-bold text-green-600">High</p>
+                <div className="bg-white p-3 flex flex-col">
+                  <span className="text-xs text-slate-500">Avg Confidence</span>
+                  <span className="text-lg font-semibold text-slate-900">{(() => {
+                    const segs = result.segments || [];
+                    if (!segs.length) return '—';
+                    const avg = segs.reduce((s, x) => s + (x.score || 0), 0) / segs.length;
+                    return `${Math.round(avg * 100)}%`;
+                  })()}</span>
                 </div>
-                <div className="bg-white p-4">
-                  <p className="text-sm text-slate-500">Processing Time</p>
-                  <p className="text-2xl font-bold text-slate-900">{formatTime(result)}s</p>
+                <div className="bg-white p-3 flex flex-col">
+                  <span className="text-xs text-slate-500">Top Category</span>
+                  <span className="text-sm font-semibold text-slate-900">{(() => {
+                    const counts = result.counts_by_category || {};
+                    const entries = Object.entries(counts);
+                    if (entries.length === 0) return '—';
+                    entries.sort((a, b) => b[1] - a[1]);
+                    const [label, cnt] = entries[0];
+                    return `${label.replace(/_/g,' ')} • ${cnt}`;
+                  })()}</span>
                 </div>
               </div>
             </CardContent>

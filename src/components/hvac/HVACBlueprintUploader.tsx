@@ -189,29 +189,50 @@ export default function HVACBlueprintUploader({ onAnalysisComplete }: HVACBluepr
 
         for (const part of parts) {
           if (!part.trim()) continue;
-          // Find the data: line(s)
+          // SSE-style events include lines beginning with `data:`. However
+          // some upstream proxies or services may return a plain JSON
+          // payload (non-SSE). Handle both formats:
           const lines = part.split('\n').map(l => l.trim()).filter(Boolean);
           const dataLine = lines.find(l => l.startsWith('data:'));
-          if (!dataLine) continue;
-          const jsonStr = dataLine.replace(/^data:\s?/, '');
-          try {
-            const obj = JSON.parse(jsonStr);
-            if (obj.type === 'progress') {
-              if (typeof obj.percent === 'number') setProgress(obj.percent);
-            } else if (obj.type === 'status') {
-              // Optionally surface status messages in the UI/logs
-              // setProgress(Math.max(progress, 5));
-            } else if (obj.type === 'result') {
-              const finalRaw = obj.result as AnalysisResult;
-              const final = normalizeAnalysisResult(finalRaw);
-              setResult(final);
-              setProgress(100);
-              if (onAnalysisComplete) onAnalysisComplete(final);
-            } else if (obj.type === 'error') {
-              setError(obj.message || 'Analysis error');
+
+          if (dataLine) {
+            const jsonStr = dataLine.replace(/^data:\s?/, '');
+            try {
+              const obj = JSON.parse(jsonStr);
+              if (obj.type === 'progress') {
+                if (typeof obj.percent === 'number') setProgress(obj.percent);
+              } else if (obj.type === 'status') {
+                // Optionally surface status messages in the UI/logs
+              } else if (obj.type === 'result') {
+                const finalRaw = obj.result as AnalysisResult;
+                const final = normalizeAnalysisResult(finalRaw);
+                setResult(final);
+                setProgress(100);
+                if (onAnalysisComplete) onAnalysisComplete(final);
+              } else if (obj.type === 'error') {
+                setError(obj.message || 'Analysis error');
+              }
+            } catch (e) {
+              console.error('Failed to parse SSE payload', e, jsonStr);
             }
-          } catch (e) {
-            console.error('Failed to parse SSE payload', e, jsonStr);
+
+          } else {
+            // Fallback: try to parse the entire part as JSON (non-SSE)
+            try {
+              const obj = JSON.parse(part);
+              // If upstream returned an object with `detections` or
+              // `segments`, treat it as the final result payload.
+              if (obj && (Array.isArray(obj.detections) || Array.isArray(obj.segments))) {
+                // Normalize to the AnalysisResult shape the UI expects
+                const finalRaw = obj as AnalysisResult;
+                const final = normalizeAnalysisResult(finalRaw);
+                setResult(final);
+                setProgress(100);
+                if (onAnalysisComplete) onAnalysisComplete(final);
+              }
+            } catch (e) {
+              // Not JSON; ignore — probably part of an incomplete SSE frame
+            }
           }
         }
       }
@@ -265,7 +286,54 @@ export default function HVACBlueprintUploader({ onAnalysisComplete }: HVACBluepr
   const normalizeAnalysisResult = (r: any): AnalysisResult => {
     if (!r) return r;
     const normalized = { ...r } as any;
-    if (Array.isArray(r.segments)) {
+    // If server returned a `detections` array (our Python service may
+    // return `detections` for OBB/rect outputs), convert into the
+    // frontend's expected `segments` array shape.
+    if (Array.isArray(r.detections) && r.detections.length > 0) {
+      normalized.segments = r.detections.map((d: any, idx: number) => {
+        const seg: any = {};
+        // Use label/class and confidence/score
+        seg.label = d.label || d.class || 'object';
+        seg.score = (d.score ?? d.confidence ?? d.conf ?? 0) as number;
+
+        // If OBB provided, compute axis-aligned bbox for display
+        const obb = d.obb || (d as any).obb;
+        if (obb && typeof obb.x_center === 'number') {
+          const cx = obb.x_center;
+          const cy = obb.y_center;
+          const w = obb.width;
+          const h = obb.height;
+          const x1 = cx - w / 2;
+          const y1 = cy - h / 2;
+          const x2 = cx + w / 2;
+          const y2 = cy + h / 2;
+          seg.bbox = [x1, y1, x2, y2];
+          seg.obb = obb;
+        } else if (typeof d.x === 'number' && typeof d.y === 'number' && typeof d.w === 'number' && typeof d.h === 'number') {
+          const cx = d.x;
+          const cy = d.y;
+          const w = d.w;
+          const h = d.h;
+          const x1 = cx - w / 2;
+          const y1 = cy - h / 2;
+          const x2 = cx + w / 2;
+          const y2 = cy + h / 2;
+          seg.bbox = [x1, y1, x2, y2];
+          seg.obb = { x_center: cx, y_center: cy, width: w, height: h, rotation: d.rotation ?? d.r ?? 0 };
+        } else if (Array.isArray(d.bbox)) {
+          seg.bbox = d.bbox;
+        } else {
+          // fallback - empty bbox
+          seg.bbox = [0, 0, 0, 0];
+        }
+
+        // Mark display format for the UI
+        seg.displayFormat = 'bbox';
+        seg.displayMask = null;
+        seg.id = d.id ?? idx;
+        return seg as Segment;
+      });
+    } else if (Array.isArray(r.segments)) {
       normalized.segments = r.segments.map((s: any) => {
         const seg = { ...s } as any;
         // Object detection mode - use bounding boxes only

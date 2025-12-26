@@ -60,6 +60,26 @@ export default function DeepZoomViewer({
   const animationFrameRef = useRef<number | null>(null);
   const [isReady, setIsReady] = useState(false);
 
+  // Keep a ref to the latest renderAnnotations so requestRender can remain stable
+  const renderAnnotationsRef = useRef<() => void>(() => {});
+
+  // Request animation frame for rendering (stable identity)
+  const requestRender = useCallback(() => {
+    if (animationFrameRef.current) return;
+
+    animationFrameRef.current = requestAnimationFrame(() => {
+      animationFrameRef.current = null;
+      const fn = renderAnnotationsRef.current;
+      try {
+        fn();
+      } catch (err) {
+        // swallow render errors to avoid breaking the RAF loop
+        // actual errors will surface in console
+        console.error('[DeepZoomViewer] renderAnnotations error', err);
+      }
+    });
+  }, []);
+
   // Initialize OpenSeadragon viewer
   useEffect(() => {
     if (!viewerRef.current) return;
@@ -118,17 +138,9 @@ export default function DeepZoomViewer({
       viewer.destroy();
       osdRef.current = null;
     };
-  }, [imageUrl]);
+  }, [imageUrl, requestRender]);
 
-  // Request animation frame for rendering
-  const requestRender = useCallback(() => {
-    if (animationFrameRef.current) return;
-
-    animationFrameRef.current = requestAnimationFrame(() => {
-      animationFrameRef.current = null;
-      renderAnnotations();
-    });
-  }, []);
+  
 
   // Get current viewport bounds in image coordinates
   const getViewportBounds = useCallback((): ViewportBounds | null => {
@@ -160,11 +172,54 @@ export default function DeepZoomViewer({
     const viewportPoint = item.imageToViewportCoordinates(imagePoint);
     const canvasPoint = viewer.viewport.viewportToViewerElementCoordinates(viewportPoint);
 
-    return [canvasPoint.x, canvasPoint.y];
-  }, []);
+      return [canvasPoint.x, canvasPoint.y];
+    }, []);
 
-  // Render annotations on canvas with viewport culling
-  const renderAnnotations = useCallback(() => {
+    // Render SAHI grid overlay
+    const renderSAHIGrid = useCallback(
+      (ctx: CanvasRenderingContext2D, bounds: ViewportBounds) => {
+        const tileSize = 640; // Standard YOLO/SAHI tile size
+        const overlap = 64; // Standard overlap
+
+        const startX = Math.floor(bounds.x / tileSize) * tileSize;
+        const startY = Math.floor(bounds.y / tileSize) * tileSize;
+        const endX = Math.ceil((bounds.x + bounds.width) / tileSize) * tileSize;
+        const endY = Math.ceil((bounds.y + bounds.height) / tileSize) * tileSize;
+
+        ctx.strokeStyle = 'rgba(255, 255, 0, 0.3)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([5, 5]);
+
+        // Draw vertical lines
+        for (let x = startX; x <= endX; x += tileSize) {
+          const canvasPoints = [imageToCanvas(x, startY), imageToCanvas(x, endY)];
+          if (canvasPoints[0] && canvasPoints[1]) {
+            ctx.beginPath();
+            ctx.moveTo(canvasPoints[0][0], canvasPoints[0][1]);
+            ctx.lineTo(canvasPoints[1][0], canvasPoints[1][1]);
+            ctx.stroke();
+          }
+        }
+
+        // Draw horizontal lines
+        for (let y = startY; y <= endY; y += tileSize) {
+          const canvasPoints = [imageToCanvas(startX, y), imageToCanvas(endX, y)];
+          if (canvasPoints[0] && canvasPoints[1]) {
+            ctx.beginPath();
+            ctx.moveTo(canvasPoints[0][0], canvasPoints[0][1]);
+            ctx.lineTo(canvasPoints[1][0], canvasPoints[1][1]);
+            ctx.stroke();
+          }
+        }
+
+        ctx.setLineDash([]);
+      },
+      [imageToCanvas]
+    );
+
+
+    // Render annotations on canvas with viewport culling
+    const renderAnnotations = useCallback(() => {
     const canvas = canvasRef.current;
     const viewer = osdRef.current;
     if (!canvas || !viewer || !isReady) return;
@@ -199,63 +254,169 @@ export default function DeepZoomViewer({
       const isHovered = ann.id === hoveredId;
       const color = getColorForLabel(ann.label);
 
-      const [x1, y1, x2, y2] = ann.bbox;
+      // If an oriented bounding box (OBB) is present, render rotated box.
+      if (ann.obb && typeof ann.obb.x_center === 'number') {
+        const obb = ann.obb;
+        const cx = obb.x_center;
+        const cy = obb.y_center;
+        const w = obb.width;
+        const h = obb.height;
+        const rot = obb.rotation || 0;
 
-      // Transform to canvas coordinates
-      const topLeft = imageToCanvas(x1, y1);
-      const bottomRight = imageToCanvas(x2, y2);
+        // Compute the four corners in image coordinates by rotating the
+        // rectangle corners around the center.
+        const corners = [
+          [-w / 2, -h / 2],
+          [w / 2, -h / 2],
+          [w / 2, h / 2],
+          [-w / 2, h / 2],
+        ].map(([dx, dy]) => {
+          const x = cx + dx * Math.cos(rot) - dy * Math.sin(rot);
+          const y = cy + dx * Math.sin(rot) + dy * Math.cos(rot);
+          return [x, y] as [number, number];
+        });
 
-      if (!topLeft || !bottomRight) continue;
+        // Map corners to canvas coordinates
+        const canvasCorners = corners.map(([ix, iy]) => imageToCanvas(ix, iy));
+        if (canvasCorners.some((p) => !p)) continue;
 
-      const [cx1, cy1] = topLeft;
-      const [cx2, cy2] = bottomRight;
-      const width = cx2 - cx1;
-      const height = cy2 - cy1;
+        // Draw filled polygon if requested
+        ctx.beginPath();
+        const first = canvasCorners[0] as [number, number];
+        ctx.moveTo(first[0], first[1]);
+        for (let i = 1; i < canvasCorners.length; i++) {
+          const pt = canvasCorners[i] as [number, number];
+          ctx.lineTo(pt[0], pt[1]);
+        }
+        ctx.closePath();
 
-      // Skip if too small to render
-      if (width < 2 || height < 2) continue;
+        if (shouldShowFill || isHovered || isSelected) {
+          ctx.globalAlpha = isSelected ? 0.4 : isHovered ? 0.35 : renderConfig.opacity;
+          ctx.fillStyle = color;
+          ctx.fill();
+          ctx.globalAlpha = 1.0;
+        }
 
-      // Render bounding box only (object detection mode)
-      if (shouldShowFill || isHovered || isSelected) {
-        ctx.globalAlpha = isSelected ? 0.4 : isHovered ? 0.35 : renderConfig.opacity;
-        ctx.fillStyle = color;
-        ctx.fillRect(cx1, cy1, width, height);
-        ctx.globalAlpha = 1.0;
+        ctx.lineWidth = isSelected ? 3 : isHovered ? 2.5 : 2;
+        ctx.strokeStyle = color;
+        ctx.stroke();
+
+        // Label: place near top-left corner (first corner) with small offset
+        if (shouldShowLabels || isSelected || isHovered) {
+          const labelText = `${ann.label} ${Math.round(ann.score * 100)}%`;
+          ctx.font = isSelected || isHovered ? 'bold 14px sans-serif' : '12px sans-serif';
+          const metrics = ctx.measureText(labelText);
+          const padding = 4;
+          const labelWidth = metrics.width + padding * 2;
+          const labelHeight = 20;
+          const lx = first[0] + 4;
+          const ly = first[1] - 6;
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+          ctx.fillRect(lx - 2, ly - labelHeight + 6 - 2, labelWidth, labelHeight);
+          ctx.fillStyle = color;
+          ctx.fillText(labelText, lx + padding - 2, ly + 2);
+        }
+
+      } else {
+        const [x1, y1, x2, y2] = ann.bbox;
+
+        // Transform to canvas coordinates
+        const topLeft = imageToCanvas(x1, y1);
+        const bottomRight = imageToCanvas(x2, y2);
+
+        if (!topLeft || !bottomRight) continue;
+
+        const [cx1, cy1] = topLeft;
+        const [cx2, cy2] = bottomRight;
+        const width = cx2 - cx1;
+        const height = cy2 - cy1;
+
+        // Skip if too small to render
+        if (width < 2 || height < 2) continue;
+
+        // Render bounding box only (object detection mode)
+        if (shouldShowFill || isHovered || isSelected) {
+          ctx.globalAlpha = isSelected ? 0.4 : isHovered ? 0.35 : renderConfig.opacity;
+          ctx.fillStyle = color;
+          ctx.fillRect(cx1, cy1, width, height);
+          ctx.globalAlpha = 1.0;
+        }
+
+        ctx.lineWidth = isSelected ? 3 : isHovered ? 2.5 : 2;
+        ctx.strokeStyle = color;
+        ctx.strokeRect(cx1, cy1, width, height);
+
+        // Render label
+        if (shouldShowLabels || isSelected || isHovered) {
+          const labelText = `${ann.label} ${Math.round(ann.score * 100)}%`;
+          ctx.font = isSelected || isHovered ? 'bold 14px sans-serif' : '12px sans-serif';
+
+          const metrics = ctx.measureText(labelText);
+          const padding = 4;
+          const labelWidth = metrics.width + padding * 2;
+          const labelHeight = 20;
+
+          // Label background
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+          ctx.fillRect(cx1, cy1 - labelHeight - 2, labelWidth, labelHeight);
+
+          // Label text
+          ctx.fillStyle = color;
+          ctx.fillText(labelText, cx1 + padding, cy1 - 6);
+        }
       }
 
-      ctx.lineWidth = isSelected ? 3 : isHovered ? 2.5 : 2;
-      ctx.strokeStyle = color;
-      ctx.strokeRect(cx1, cy1, width, height);
+        // Prepare handle points for selected annotation (works for both OBB and AABB)
+        let handlePoints: Array<[number, number]> | null = null;
+        if (ann.obb && typeof ann.obb.x_center === 'number') {
+          // canvasCorners was computed in the OBB branch
+          // reuse those if available
+          const obb = ann.obb;
+          const cx = obb.x_center;
+          const cy = obb.y_center;
+          const w = obb.width;
+          const h = obb.height;
+          const rot = obb.rotation || 0;
 
-      // Render label
-      if (shouldShowLabels || isSelected || isHovered) {
-        const labelText = `${ann.label} ${Math.round(ann.score * 100)}%`;
-        ctx.font = isSelected || isHovered ? 'bold 14px sans-serif' : '12px sans-serif';
+          const corners = [
+            [-w / 2, -h / 2],
+            [w / 2, -h / 2],
+            [w / 2, h / 2],
+            [-w / 2, h / 2],
+          ].map(([dx, dy]) => {
+            const x = cx + dx * Math.cos(rot) - dy * Math.sin(rot);
+            const y = cy + dx * Math.sin(rot) + dy * Math.cos(rot);
+            return [x, y] as [number, number];
+          });
 
-        const metrics = ctx.measureText(labelText);
-        const padding = 4;
-        const labelWidth = metrics.width + padding * 2;
-        const labelHeight = 20;
+          const canvasCorners = corners.map(([ix, iy]) => imageToCanvas(ix, iy));
+          if (!canvasCorners.some((p) => !p)) {
+            handlePoints = canvasCorners as Array<[number, number]>;
+          }
+        } else if (ann.bbox) {
+          const [x1, y1, x2, y2] = ann.bbox;
+          const topLeft = imageToCanvas(x1, y1);
+          const bottomRight = imageToCanvas(x2, y2);
+          if (topLeft && bottomRight) {
+            const [cx1, cy1] = topLeft;
+            const [cx2, cy2] = bottomRight;
+            handlePoints = [
+              [cx1, cy1],
+              [cx2, cy1],
+              [cx1, cy2],
+              [cx2, cy2],
+            ];
+          }
+        }
 
-        // Label background
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
-        ctx.fillRect(cx1, cy1 - labelHeight - 2, labelWidth, labelHeight);
-
-        // Label text
-        ctx.fillStyle = color;
-        ctx.fillText(labelText, cx1 + padding, cy1 - 6);
-      }
-
-      // Render resize handles for selected annotation
-      if (isSelected && lodLevel === 'detail') {
-        const handleSize = 8;
-        ctx.fillStyle = color;
-        // Corner handles
-        ctx.fillRect(cx1 - handleSize / 2, cy1 - handleSize / 2, handleSize, handleSize);
-        ctx.fillRect(cx2 - handleSize / 2, cy1 - handleSize / 2, handleSize, handleSize);
-        ctx.fillRect(cx1 - handleSize / 2, cy2 - handleSize / 2, handleSize, handleSize);
-        ctx.fillRect(cx2 - handleSize / 2, cy2 - handleSize / 2, handleSize, handleSize);
-      }
+        // Render resize handles for selected annotation
+        if (isSelected && lodLevel === 'detail' && handlePoints) {
+          const handleSize = 8;
+          ctx.fillStyle = color;
+          for (const [hx, hy] of handlePoints) {
+            ctx.fillRect(hx - handleSize / 2, hy - handleSize / 2, handleSize, handleSize);
+          }
+        }
     }
 
     // Render SAHI grid if enabled
@@ -263,7 +424,6 @@ export default function DeepZoomViewer({
       renderSAHIGrid(ctx, viewportBounds);
     }
   }, [
-    annotations,
     selectedId,
     hoveredId,
     renderConfig,
@@ -271,49 +431,15 @@ export default function DeepZoomViewer({
     getViewportBounds,
     imageToCanvas,
     isReady,
+    renderSAHIGrid,
   ]);
 
-  // Render SAHI grid overlay
-  const renderSAHIGrid = useCallback(
-    (ctx: CanvasRenderingContext2D, bounds: ViewportBounds) => {
-      const tileSize = 640; // Standard YOLO/SAHI tile size
-      const overlap = 64; // Standard overlap
+  // keep ref synced so requestRender can call the latest version
+  useEffect(() => {
+    renderAnnotationsRef.current = renderAnnotations;
+  }, [renderAnnotations]);
 
-      const startX = Math.floor(bounds.x / tileSize) * tileSize;
-      const startY = Math.floor(bounds.y / tileSize) * tileSize;
-      const endX = Math.ceil((bounds.x + bounds.width) / tileSize) * tileSize;
-      const endY = Math.ceil((bounds.y + bounds.height) / tileSize) * tileSize;
-
-      ctx.strokeStyle = 'rgba(255, 255, 0, 0.3)';
-      ctx.lineWidth = 1;
-      ctx.setLineDash([5, 5]);
-
-      // Draw vertical lines
-      for (let x = startX; x <= endX; x += tileSize) {
-        const canvasPoints = [imageToCanvas(x, startY), imageToCanvas(x, endY)];
-        if (canvasPoints[0] && canvasPoints[1]) {
-          ctx.beginPath();
-          ctx.moveTo(canvasPoints[0][0], canvasPoints[0][1]);
-          ctx.lineTo(canvasPoints[1][0], canvasPoints[1][1]);
-          ctx.stroke();
-        }
-      }
-
-      // Draw horizontal lines
-      for (let y = startY; y <= endY; y += tileSize) {
-        const canvasPoints = [imageToCanvas(startX, y), imageToCanvas(endX, y)];
-        if (canvasPoints[0] && canvasPoints[1]) {
-          ctx.beginPath();
-          ctx.moveTo(canvasPoints[0][0], canvasPoints[0][1]);
-          ctx.lineTo(canvasPoints[1][0], canvasPoints[1][1]);
-          ctx.stroke();
-        }
-      }
-
-      ctx.setLineDash([]);
-    },
-    [imageToCanvas]
-  );
+  
 
   // Handle mouse click for selection
   const handleCanvasClick = useCallback(

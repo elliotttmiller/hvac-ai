@@ -40,7 +40,15 @@ export interface EditableAnnotation {
   id: string;
   label: string;
   score: number;
-  bbox: [number, number, number, number]; // [x1, y1, x2, y2] - object detection bounding box only
+  bbox: [number, number, number, number]; // [x1, y1, x2, y2] - axis-aligned AABB used for indexing/rendering
+  // Optional oriented bounding box (OBB). Preferred for new detections.
+  obb?: {
+    x_center: number;
+    y_center: number;
+    width: number;
+    height: number;
+    rotation: number; // radians
+  };
   isDirty: boolean;
   isNew: boolean;
 }

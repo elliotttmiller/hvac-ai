@@ -197,86 +197,109 @@ export default function InferenceAnalysis({ initialImage, initialSegments, initi
     ctx.lineJoin = 'round'; // Smooth corners
     ctx.lineCap = 'round'; // Smooth line ends
 
-    // Loop segments and draw bounding boxes
+    // Loop segments and draw oriented bounding boxes (OBB)
     for (let index = 0; index < segments.length; index++) {
       const segment = segments[index];
       const isHovered = index === hoveredIndex;
       const baseColor = getColorForLabel(segment.label);
 
-      // Draw bounding box with subpixel precision
-      const [x, y, x2, y2] = segment.bbox;
+  const obb = segment.obb;
       const s = scaleRef.current || 1;
-      const sx = Math.round(x * s * 100) / 100;
-      const sy = Math.round(y * s * 100) / 100;
-      const sw = Math.round((x2 - x) * s * 100) / 100;
-      const sh = Math.round((y2 - y) * s * 100) / 100;
-      
-      // Draw stroke
-      ctx.lineWidth = isHovered ? 3.5 : 2;
-      ctx.strokeStyle = baseColor;
-      ctx.strokeRect(sx, sy, sw, sh);
-      
-      // Draw fill if enabled
-      if (showFill || isHovered) {
+
+      if (obb && typeof obb.x_center === 'number') {
+        // Scale centers and sizes to display coordinates
+        const cx = Math.round(obb.x_center * s * 100) / 100;
+        const cy = Math.round(obb.y_center * s * 100) / 100;
+        const w = Math.round(obb.width * s * 100) / 100;
+        const h = Math.round(obb.height * s * 100) / 100;
+        const rot = obb.rotation || 0;
+
         ctx.save();
-        ctx.globalAlpha = isHovered ? 0.15 : 0.08;
-        ctx.fillStyle = baseColor;
-        ctx.fillRect(sx, sy, sw, sh);
-        ctx.restore();
-      }
+        ctx.translate(cx, cy);
+        ctx.rotate(rot);
 
-      // Enhanced labels with rounded rectangles and gradients
-      if (showLabels || isHovered) {
-        const [x, y] = segment.bbox;
-        const s = scaleRef.current || 1;
-        const labelText = `${segment.label} ${Math.round(segment.score * 100)}%`;
-        // Improved font stack with system fonts
-        ctx.font = isHovered 
-          ? 'bold 16px -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif' 
-          : '12px -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif';
-        const textMetrics = ctx.measureText(labelText);
-        const pad = 6;
-        const textW = textMetrics.width + pad * 2;
-        const textH = isHovered ? 26 : 20;
-        const labelX = Math.round(x * s * 100) / 100;
-        const labelY = Math.round((y * s) * 100) / 100 - textH;
-        const cornerRadius = 4;
+        // Draw stroke
+        ctx.lineWidth = isHovered ? 3.5 : 2;
+        ctx.strokeStyle = baseColor;
+        ctx.strokeRect(-w / 2, -h / 2, w, h);
 
-        // Rounded rectangle background
-        ctx.save();
-        ctx.beginPath();
-        ctx.moveTo(labelX + cornerRadius, labelY);
-        ctx.lineTo(labelX + textW - cornerRadius, labelY);
-        ctx.quadraticCurveTo(labelX + textW, labelY, labelX + textW, labelY + cornerRadius);
-        ctx.lineTo(labelX + textW, labelY + textH - cornerRadius);
-        ctx.quadraticCurveTo(labelX + textW, labelY + textH, labelX + textW - cornerRadius, labelY + textH);
-        ctx.lineTo(labelX + cornerRadius, labelY + textH);
-        ctx.quadraticCurveTo(labelX, labelY + textH, labelX, labelY + textH - cornerRadius);
-        ctx.lineTo(labelX, labelY + cornerRadius);
-        ctx.quadraticCurveTo(labelX, labelY, labelX + cornerRadius, labelY);
-        ctx.closePath();
-
-        // Gradient background for hover state
-        if (isHovered) {
-          const gradient = ctx.createLinearGradient(labelX, labelY, labelX, labelY + textH);
-          gradient.addColorStop(0, baseColor);
-          gradient.addColorStop(1, baseColor + 'cc');
-          ctx.fillStyle = gradient;
-        } else {
-          ctx.fillStyle = 'rgba(0,0,0,0.75)';
+        // Draw fill if enabled
+        if (showFill || isHovered) {
+          ctx.globalAlpha = isHovered ? 0.15 : 0.08;
+          ctx.fillStyle = baseColor;
+          ctx.fillRect(-w / 2, -h / 2, w, h);
         }
-        ctx.fill();
+
         ctx.restore();
 
-        // Text with shadow for better contrast
-        ctx.save();
-        ctx.shadowColor = 'rgba(0,0,0,0.5)';
-        ctx.shadowBlur = 2;
-        ctx.shadowOffsetX = 0;
-        ctx.shadowOffsetY = 1;
-        ctx.fillStyle = '#fff';
-        ctx.fillText(labelText, labelX + pad, labelY + (isHovered ? 17 : 14));
-        ctx.restore();
+        // Labels: position at un-rotated top-left corner (approximate)
+        if (showLabels || isHovered) {
+          const labelText = `${segment.label} ${Math.round(segment.score * 100)}%`;
+          ctx.font = isHovered
+            ? 'bold 16px -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif'
+            : '12px -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif';
+          const textMetrics = ctx.measureText(labelText);
+          const pad = 6;
+          const textW = textMetrics.width + pad * 2;
+          const textH = isHovered ? 26 : 20;
+
+          // place label at top-left of the box without rotating the label itself
+          const labelX = Math.round((obb.x_center - obb.width / 2) * s * 100) / 100;
+          const labelY = Math.round((obb.y_center - obb.height / 2) * s * 100) / 100 - textH;
+          const cornerRadius = 4;
+
+          ctx.save();
+          ctx.beginPath();
+          ctx.moveTo(labelX + cornerRadius, labelY);
+          ctx.lineTo(labelX + textW - cornerRadius, labelY);
+          ctx.quadraticCurveTo(labelX + textW, labelY, labelX + textW, labelY + cornerRadius);
+          ctx.lineTo(labelX + textW, labelY + textH - cornerRadius);
+          ctx.quadraticCurveTo(labelX + textW, labelY + textH, labelX + textW - cornerRadius, labelY + textH);
+          ctx.lineTo(labelX + cornerRadius, labelY + textH);
+          ctx.quadraticCurveTo(labelX, labelY + textH, labelX, labelY + textH - cornerRadius);
+          ctx.lineTo(labelX, labelY + cornerRadius);
+          ctx.quadraticCurveTo(labelX, labelY, labelX + cornerRadius, labelY);
+          ctx.closePath();
+
+          if (isHovered) {
+            const gradient = ctx.createLinearGradient(labelX, labelY, labelX, labelY + textH);
+            gradient.addColorStop(0, baseColor);
+            gradient.addColorStop(1, baseColor + 'cc');
+            ctx.fillStyle = gradient;
+          } else {
+            ctx.fillStyle = 'rgba(0,0,0,0.75)';
+          }
+          ctx.fill();
+          ctx.restore();
+
+          ctx.save();
+          ctx.shadowColor = 'rgba(0,0,0,0.5)';
+          ctx.shadowBlur = 2;
+          ctx.shadowOffsetX = 0;
+          ctx.shadowOffsetY = 1;
+          ctx.fillStyle = '#fff';
+          ctx.fillText(labelText, labelX + pad, labelY + (isHovered ? 17 : 14));
+          ctx.restore();
+        }
+
+      } else {
+        // Fallback: if no OBB, try drawing axis-aligned bbox for backward compatibility
+        const [x, y, x2, y2] = segment.bbox || [0, 0, 0, 0];
+        const sx = Math.round(x * s * 100) / 100;
+        const sy = Math.round(y * s * 100) / 100;
+        const sw = Math.round((x2 - x) * s * 100) / 100;
+        const sh = Math.round((y2 - y) * s * 100) / 100;
+
+        ctx.lineWidth = isHovered ? 3.5 : 2;
+        ctx.strokeStyle = baseColor;
+        ctx.strokeRect(sx, sy, sw, sh);
+        if (showFill || isHovered) {
+          ctx.save();
+          ctx.globalAlpha = isHovered ? 0.15 : 0.08;
+          ctx.fillStyle = baseColor;
+          ctx.fillRect(sx, sy, sw, sh);
+          ctx.restore();
+        }
       }
     }
     ctx.restore();
@@ -390,14 +413,36 @@ export default function InferenceAnalysis({ initialImage, initialSegments, initi
     const mouseX = (e.clientX - rect.left - panX) / zoom;
     const mouseY = (e.clientY - rect.top - panY) / zoom;
 
-    // Iterate top-most first for bbox hit testing
+    // Iterate top-most first for OBB hit testing (fallback to bbox if absent)
     for (let i = segments.length - 1; i >= 0; i--) {
       const seg = segments[i];
-      const [x1, y1, x2, y2] = seg.bbox;
       const s = scaleRef.current || 1;
-      if (mouseX >= x1 * s && mouseX <= x2 * s && mouseY >= y1 * s && mouseY <= y2 * s) {
-        if (hoveredIndex !== i) setHoveredIndex(i);
-        return;
+
+      if (seg.obb && typeof seg.obb.x_center === 'number') {
+        const cx = seg.obb.x_center * s;
+        const cy = seg.obb.y_center * s;
+        const w = seg.obb.width * s;
+        const h = seg.obb.height * s;
+        const rot = seg.obb.rotation || 0;
+
+        // Translate point into box-local coordinates by rotating by -rot
+        const dx = mouseX - cx;
+        const dy = mouseY - cy;
+        const cosR = Math.cos(rot);
+        const sinR = Math.sin(rot);
+        const localX = dx * cosR + dy * sinR; // rotate by -rot
+        const localY = -dx * sinR + dy * cosR;
+
+        if (Math.abs(localX) <= w / 2 && Math.abs(localY) <= h / 2) {
+          if (hoveredIndex !== i) setHoveredIndex(i);
+          return;
+        }
+      } else if (seg.bbox) {
+        const [x1, y1, x2, y2] = seg.bbox;
+        if (mouseX >= x1 * s && mouseX <= x2 * s && mouseY >= y1 * s && mouseY <= y2 * s) {
+          if (hoveredIndex !== i) setHoveredIndex(i);
+          return;
+        }
       }
     }
     if (hoveredIndex !== null) setHoveredIndex(null);

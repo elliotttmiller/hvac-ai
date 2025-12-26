@@ -35,12 +35,37 @@ export function useAnnotationStore() {
 
     segments.forEach((seg, idx) => {
       const id = `ann_${Date.now()}_${idx}`;
-      const [x1, y1, x2, y2] = seg.bbox;
+
+      // Prefer oriented bounding box (OBB) when available. Compute an
+      // axis-aligned bounding box (AABB) from the OBB for spatial indexing
+      // and compatibility with legacy UI components.
+      let bbox: [number, number, number, number] = [0, 0, 0, 0];
+      let obb = undefined;
+
+      if (seg.obb && typeof seg.obb.x_center === 'number') {
+        obb = {
+          x_center: seg.obb.x_center,
+          y_center: seg.obb.y_center,
+          width: seg.obb.width,
+          height: seg.obb.height,
+          rotation: seg.obb.rotation ?? 0,
+        };
+        const cx = obb.x_center;
+        const cy = obb.y_center;
+        const w = obb.width;
+        const h = obb.height;
+        bbox = [cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2];
+      } else if (Array.isArray(seg.bbox) && seg.bbox.length === 4) {
+        const [x1, y1, x2, y2] = seg.bbox;
+        bbox = [x1, y1, x2, y2];
+      }
+
       const annotation: EditableAnnotation = {
         id,
         label: seg.label,
         score: seg.score,
-        bbox: [x1, y1, x2, y2],
+        bbox,
+        obb,
         isDirty: false,
         isNew: false,
       };

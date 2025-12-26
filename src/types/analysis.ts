@@ -9,7 +9,16 @@
 export interface Segment {
   label: string;
   score: number;
-  bbox: number[]; // [x1, y1, x2, y2] bounding box coordinates
+  // Geometry: prefer oriented bounding box (OBB). Keep `bbox` optional
+  // for backward compatibility, but new code should use `obb`.
+  bbox?: number[]; // [x1, y1, x2, y2] bounding box coordinates (optional)
+  obb?: {
+    x_center: number;
+    y_center: number;
+    width: number;
+    height: number;
+    rotation: number; // radians
+  };
   // Deprecated fields (kept for backward compatibility)
   mask?: never;
   polygon?: never;

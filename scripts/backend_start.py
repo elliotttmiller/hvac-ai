@@ -3,20 +3,52 @@ from fastapi import FastAPI, UploadFile, File, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import numpy as np
+from pathlib import Path
 # Heavy ML imports are deferred when SKIP_MODEL is enabled
 cv2 = None
 torch = None
 YOLO = None
 import logging
 import sys
+from pathlib import Path
 import uuid
 import json
 import os
+from fastapi import Request
 
 # --- CONFIGURATION ---
 # MODEL_PATH can be overridden via the MODEL_PATH env var (or .env.local)
 # Update this default to your fallback path if you prefer a hardcoded default.
 MODEL_PATH = os.environ.get('MODEL_PATH')
+
+# If MODEL_PATH was not provided via environment, try loading project .env.local
+# (useful when running this script directly during development)
+if not MODEL_PATH:
+    try:
+        repo_root = Path(__file__).resolve().parent.parent
+        env_file = repo_root / ".env.local"
+        if env_file.exists():
+            for raw in env_file.read_text(encoding='utf-8').splitlines():
+                line = raw.strip()
+                if not line or line.startswith('#') or '=' not in line:
+                    continue
+                key, val = line.split('=', 1)
+                key = key.strip()
+                val = val.strip().strip('"').strip("'")
+                if key == 'MODEL_PATH' and val:
+                    MODEL_PATH = val
+                    os.environ['MODEL_PATH'] = val
+                    logger = logging.getLogger('HVAC-Backend')
+                    logger.info(f"Loaded MODEL_PATH from .env.local: {MODEL_PATH}")
+                    break
+    except Exception:
+        pass
+
+# Ensure repository root is on sys.path so 'services.*' imports resolve both
+# when running from scripts/ and for editor language servers (Pylance/pyright).
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 PORT = 8000
 CONF_THRES = 0.50
 IOU_THRES = 0.45
@@ -44,6 +76,7 @@ app.add_middleware(
 
 model = None
 HALF = False
+pricing_engine = None
 
 # Dev mode: skip loading heavy ML stack
 # Can be enabled via environment variable SKIP_MODEL=1 or CLI arg --no-model
@@ -177,6 +210,70 @@ async def process_image(file_bytes):
         "count": len(detections),
         "detections": detections
     }
+
+
+# --- Quote generation endpoint (inference-focused) ---
+try:
+    from services.hvac_domain.pricing import PricingEngine, QuoteRequest  # type: ignore
+except Exception:
+    PricingEngine = None
+    QuoteRequest = None
+
+
+@app.post("/api/v1/quote/generate")
+async def generate_quote(request: Request):
+    """Generate a financial quote from HVAC analysis data.
+
+    This mirrors the behavior expected by the frontend. The pricing engine
+    will be lazily initialized on first request so the backend can start
+    in dev mode without failing if pricing dependencies are missing.
+    """
+    global pricing_engine
+    if PricingEngine is None or QuoteRequest is None:
+        # Pricing subsystem not available in this environment
+        raise HTTPException(status_code=503, detail="Pricing subsystem unavailable")
+
+    if pricing_engine is None:
+        try:
+            pricing_engine = PricingEngine()
+        except Exception as e:
+            logger.error(f"Failed to initialize PricingEngine: {e}")
+            raise HTTPException(status_code=503, detail="Pricing engine init failed")
+
+    try:
+        payload = await request.json()
+        quote_request = QuoteRequest(**payload)
+        quote_response = pricing_engine.generate_quote(quote_request)
+        # Return serialized model (if pydantic) or dict-like response
+        try:
+            return quote_response.model_dump()
+        except Exception:
+            return dict(quote_response)
+    except ValueError as e:
+        logger.error(f"Quote validation error: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception("Quote generation failed")
+        raise HTTPException(status_code=500, detail=f"Quote generation failed: {e}")
+
+
+@app.get("/api/v1/quote/available")
+def quote_available():
+    """Return whether the pricing subsystem is present in this runtime.
+
+    This endpoint is intentionally lightweight: it checks whether the
+    PricingEngine import was successful. It does NOT instantiate the
+    engine nor load heavy pricing dependencies. Frontend uses this to
+    decide whether to enable quoting UI and avoid noisy 503 errors.
+    """
+    try:
+        if PricingEngine is None:
+            return JSONResponse(content={"available": False, "reason": "Pricing subsystem not installed"}, status_code=200)
+        # If module is importable, report available; deeper init errors will be surfaced on generate
+        return JSONResponse(content={"available": True}, status_code=200)
+    except Exception as e:
+        logger.warning(f"quote_available check failed: {e}")
+        return JSONResponse(content={"available": False, "reason": str(e)}, status_code=200)
 
 # Match the path your frontend expects
 @app.post("/api/hvac/analyze") 

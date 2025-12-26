@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect, forwardRef, useImperativeHandle } from 'react';
 import type { Segment, CountResult } from '@/types/analysis';
 import { Card, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -20,44 +20,7 @@ import {
 } from 'lucide-react';
 import { useDropzone } from 'react-dropzone';
 
-const CLASS_COLORS: Record<string, string> = {
-  valve: '#ef4444',
-  instrument: '#3b82f6',
-  sensor: '#10b981',
-  duct: '#f59e0b',
-  default: '#8b5cf6',
-};
-
-// Cache assigned colors per label so the same label always receives the same color
-const labelColorCache = new Map<string, string>();
-
-function djb2Hash(str: string) {
-  let hash = 5381;
-  for (let i = 0; i < str.length; i++) {
-    hash = ((hash << 5) + hash) + str.charCodeAt(i);
-    hash = hash | 0;
-  }
-  return Math.abs(hash);
-}
-
-// Assign a unique color per full label string by hashing the label to a hue
-// across the full 0-359 range. This makes each label distinct even within the
-// same semantic group.
-function getColorForLabel(label: string) {
-  const key = String(label || '');
-  const cached = labelColorCache.get(key);
-  if (cached) return cached;
-
-  const h = djb2Hash(key + '::unique');
-  const hue = h % 360;
-
-  // Choose saturation/lightness for good contrast on dark backgrounds
-  const sat = 68;
-  const light = 52;
-  const color = `hsl(${hue}, ${sat}%, ${light}%)`;
-  labelColorCache.set(key, color);
-  return color;
-}
+import { getColorForLabel } from '@/lib/label-colors';
 
 interface InferenceAnalysisProps {
   initialImage?: File | null;
@@ -65,7 +28,16 @@ interface InferenceAnalysisProps {
   initialCount?: { total_objects_found: number; counts_by_category: Record<string, number> } | null;
 }
 
-export default function InferenceAnalysis({ initialImage, initialSegments, initialCount }: InferenceAnalysisProps) {
+interface InferenceControl {
+  focusOnCategory: (category: string) => void;
+  // Backwards-compatible single-setter
+  setFilterCategory: (category: string | null) => void;
+  // New multi-select setter: pass an array of category keys to filter, or null to clear
+  setFilterCategories: (categories: string[] | null) => void;
+  setHighlightedCategory: (category: string | null) => void;
+}
+
+const InferenceAnalysisInner = function InferenceAnalysis({ initialImage, initialSegments, initialCount }: InferenceAnalysisProps, ref: React.ForwardedRef<InferenceControl>) {
   const isControlled = !!(initialImage || initialSegments);
 
   const [uploadedImage, setUploadedImage] = useState<File | null>(initialImage || null);
@@ -76,9 +48,12 @@ export default function InferenceAnalysis({ initialImage, initialSegments, initi
   
   const [showFill, setShowFill] = useState(true);
   const [labelDisplay, setLabelDisplay] = useState<'boxes'|'boxes-names'|'boxes-names-score'|'none'>('boxes-names-score');
+  // Support both single-category filter (legacy) and multi-category filters.
   const [filterCategory, setFilterCategory] = useState<string | null>(null);
+  const [filterCategories, setFilterCategories] = useState<string[] | null>(null);
   const [highlightedCategory, setHighlightedCategory] = useState<string | null>(null);
-  const [sidebarOpen, setSidebarOpen] = useState<boolean>(true);
+  // Sidebar has been migrated to the parent unified right panel. Keep the
+  // inference component focused on rendering the image & overlays only.
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
 
   const [zoom, setZoom] = useState(1);
@@ -274,8 +249,10 @@ export default function InferenceAnalysis({ initialImage, initialSegments, initi
 
     segments.forEach((seg, index) => {
       const isHovered = index === hoveredIndex;
-      const color = getColorForLabel(seg.label);
-      const matchesFilter = !filterCategory || seg.label === filterCategory;
+    const color = getColorForLabel(seg.label);
+    // Resolve active filters: prefer explicit multi-select, fall back to single legacy filter
+    const activeFilters = (filterCategories && filterCategories.length) ? filterCategories : (filterCategory ? [filterCategory] : null);
+    const matchesFilter = !activeFilters || activeFilters.includes(seg.label);
       const matchesHighlight = !highlightedCategory || seg.label === highlightedCategory;
       const s = scaleRef.current;
       // Use a stable string key for the path cache (seg.id may be undefined or numeric)
@@ -337,7 +314,7 @@ export default function InferenceAnalysis({ initialImage, initialSegments, initi
         ctx.stroke(path);
       }
 
-      if (isMatch || !filterCategory) {
+      if (isMatch || !activeFilters) {
         // emphasis for hovered or highlighted
         // Thinner default stroke and modest hover increase for crisp lines
         ctx.lineWidth = isHovered || (highlightedCategory && seg.label === highlightedCategory) ? 1.2 : 0.8;
@@ -352,7 +329,7 @@ export default function InferenceAnalysis({ initialImage, initialSegments, initi
         }
       }
 
-  if ((shouldDrawNames || isHovered) && (seg.label || seg.score !== undefined) && (isMatch || !filterCategory)) {
+  if ((shouldDrawNames || isHovered) && (seg.label || seg.score !== undefined) && (isMatch || !activeFilters)) {
         let lx = 0, ly = 0;
         if (seg.bbox) {
             lx = seg.bbox[0] * s;
@@ -374,7 +351,7 @@ export default function InferenceAnalysis({ initialImage, initialSegments, initi
     });
 
     ctx.restore();
-  }, [segments, hoveredIndex, showFill, labelDisplay, zoom, panX, panY, filterCategory, highlightedCategory]);
+  }, [segments, hoveredIndex, showFill, labelDisplay, zoom, panX, panY, filterCategory, filterCategories, highlightedCategory]);
   
   // redraw overlay when filter or highlight changes
   useEffect(() => {
@@ -434,6 +411,23 @@ export default function InferenceAnalysis({ initialImage, initialSegments, initi
     setPanX(newPanX);
     setPanY(newPanY);
   }, [segments]);
+
+  // Expose imperative methods so parent can control highlighting/filtering
+  useImperativeHandle(ref, () => ({
+    focusOnCategory: (category: string) => focusOnCategory(category),
+    // legacy single-category helper (keeps previous API working)
+    setFilterCategory: (category: string | null) => {
+      setFilterCategory(category);
+      setFilterCategories(category ? [category] : null);
+    },
+    // preferred multi-category setter
+    setFilterCategories: (categories: string[] | null) => {
+      setFilterCategories(categories);
+      // keep single-field in sync (used by some legacy logic)
+      setFilterCategory(categories && categories.length === 1 ? categories[0] : null);
+    },
+    setHighlightedCategory: (category: string | null) => setHighlightedCategory(category),
+  }), [focusOnCategory]);
 
   // include filter/highlight in overlay draw deps
   // (added filterCategory / highlightedCategory to dependency list)
@@ -518,11 +512,9 @@ export default function InferenceAnalysis({ initialImage, initialSegments, initi
     );
   }
 
-  const mainColClass = sidebarOpen ? 'lg:col-span-4' : 'lg:col-span-5';
-
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 h-full">
-      <Card className={`${mainColClass} overflow-hidden flex flex-col h-[760px] transition-all duration-200`}>
+    <div className="h-full">
+      <Card className={`w-full overflow-hidden flex flex-col h-full transition-all duration-200`}>
         <CardHeader className="py-3 px-4 border-b flex flex-row items-center justify-between bg-slate-50">
           <CardTitle className="text-sm font-medium flex items-center gap-2">
             <Scan className="h-4 w-4" /> Visual Inspection
@@ -566,76 +558,11 @@ export default function InferenceAnalysis({ initialImage, initialSegments, initi
               <p className="text-xs">Confidence: {(segments[hoveredIndex].score * 100).toFixed(1)}%</p>
             </div>
           )}
-          {/* Floating sidebar toggle - visible even when collapsed; placed inside the viewer so it's always reachable */}
-          <button
-            onClick={() => setSidebarOpen(s => !s)}
-            aria-label={sidebarOpen ? 'Collapse components' : 'Open components'}
-            className="absolute right-4 top-1/3 z-40 h-10 w-10 rounded-full bg-white/6 backdrop-blur-sm border border-white/8 flex items-center justify-center hover:bg-white/10 text-white transition-colors"
-          >
-            {sidebarOpen ? <ChevronRight className="h-5 w-5 text-white" /> : <Menu className="h-5 w-5 text-white" />}
-          </button>
+          {/* Components sidebar migrated to the dashboard panel; no floating toggle here. */}
         </div>
       </Card>
-
-      {sidebarOpen ? (
-        <Card className="lg:col-span-1 flex flex-col h-[600px] transition-all duration-200">
-          <CardHeader className="py-3 border-b bg-white/6 backdrop-blur-sm">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <FileBarChart className="h-4 w-4" /> Components
-            </CardTitle>
-            <div className="ml-auto">
-              <button
-                aria-label="Collapse components"
-                onClick={() => setSidebarOpen(false)}
-                className="text-xs px-2 py-1 rounded bg-white/6 hover:bg-white/8 border border-transparent"
-              >
-                Collapse
-              </button>
-            </div>
-          </CardHeader>
-          <div className="flex-1 overflow-y-auto p-4 space-y-2 bg-white/3 backdrop-blur-sm">
-          {countResult ? (
-            Object.entries(countResult.counts_by_category)
-                  .sort(([,a], [,b]) => b - a)
-                  .map(([label, count]) => {
-                    const color = getColorForLabel(label as string);
-                    const displayLabel = (label as string).replace(/_/g, ' ');
-                    const active = filterCategory === label;
-                    return (
-                      <div
-                        key={label}
-                        onClick={() => { if (active) { setFilterCategory(null); } else { setFilterCategory(label); focusOnCategory(label); } }}
-                        onMouseEnter={() => setHighlightedCategory(label)}
-                        onMouseLeave={() => setHighlightedCategory(null)}
-                        role="button"
-                        aria-pressed={active}
-                        className={`flex justify-between items-center p-2 rounded text-sm cursor-pointer ${active ? 'bg-slate-100' : 'hover:bg-slate-50'}`}
-                      >
-                        <div className="flex items-center gap-3">
-                          <div style={{ width: 10, height: 10, backgroundColor: color, borderRadius: 2 }} />
-                          <span className="capitalize">{displayLabel}</span>
-                        </div>
-                        <Badge variant="secondary" style={{ borderColor: color, color }}>{count}</Badge>
-                      </div>
-                    );
-                  })
-          ) : (
-            <div className="text-center text-slate-400 mt-10">No components detected</div>
-          )}
-          </div>
-        </Card>
-      ) : (
-        // Collapsed toggle button (small pill on the right)
-        <div className="lg:col-span-1 flex items-start justify-end pr-2">
-          <button
-            aria-label="Open components"
-            onClick={() => setSidebarOpen(true)}
-            className="mt-4 mr-2 px-3 py-1 rounded-full bg-white/8 backdrop-blur-sm border border-transparent hover:bg-white/12 text-sm"
-          >
-            Components
-          </button>
-        </div>
-      )}
     </div>
   );
-}
+};
+
+export default forwardRef(InferenceAnalysisInner);

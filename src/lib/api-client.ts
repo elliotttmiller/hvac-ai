@@ -62,6 +62,31 @@ export async function generateQuote(request: GenerateQuoteRequest): Promise<Gene
 }
 
 /**
+ * Check whether the pricing subsystem is available on the backend.
+ * Returns { available: boolean, reason?: string }
+ */
+export async function checkPricingAvailable(): Promise<{ available: boolean; reason?: string }> {
+  const PYTHON_SERVICE_URL = process.env.NEXT_PUBLIC_AI_SERVICE_URL || 'http://localhost:8000';
+  try {
+    const res = await fetch(`${PYTHON_SERVICE_URL}/api/v1/quote/available`, {
+      method: 'GET',
+      headers: { 'ngrok-skip-browser-warning': '69420' }
+    });
+
+    if (!res.ok) {
+      // Try to parse JSON body for reason
+      const body = await res.json().catch(() => ({}));
+      return { available: false, reason: body.detail || body.reason || `HTTP ${res.status}` };
+    }
+
+    const json = await res.json().catch(() => ({ available: false }));
+    return { available: !!json.available, reason: json.reason };
+  } catch (err) {
+    return { available: false, reason: String(err) };
+  }
+}
+
+/**
  * Export quote to CSV format with proper RFC 4180 compliant escaping
  */
 export function exportQuoteToCSV(quote: Quote, projectId: string): void {

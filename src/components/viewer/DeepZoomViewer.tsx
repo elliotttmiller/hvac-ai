@@ -37,6 +37,10 @@ function getColorForLabel(label: string): string {
   return CLASS_COLORS.default;
 }
 
+function formatConfidence(confidence: number): string {
+  return `${Math.round(confidence * 100)}%`;
+}
+
 function drawLabel(
   ctx: CanvasRenderingContext2D,
   label: string,
@@ -50,8 +54,8 @@ function drawLabel(
 ) {
   // Prefer extracted text content over class label if available
   const displayText = textContent 
-    ? `${textContent} (${Math.round((textConfidence || 0) * 100)}%)`
-    : `${label} ${Math.round(score * 100)}%`;
+    ? `${textContent} (${formatConfidence(textConfidence || 0)})`
+    : `${label} ${formatConfidence(score)}`;
   
   // Use monospace font for extracted text to signify "Read Data"
   const fontFamily = textContent ? 'monospace' : 'sans-serif';

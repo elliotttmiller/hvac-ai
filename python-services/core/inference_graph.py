@@ -269,8 +269,16 @@ class InferenceGraphIngress:
         for i, detection in enumerate(detections):
             label = detection['label'].lower()
             
-            # Check if this is a text-rich class
-            if any(text_class in label for text_class in TEXT_RICH_CLASSES):
+            # Check if this is a text-rich class (exact word matching to avoid false positives)
+            is_text_rich = label in TEXT_RICH_CLASSES or any(
+                label == text_class or 
+                label.startswith(text_class + '_') or 
+                label.endswith('_' + text_class) or
+                ('_' + text_class + '_') in label
+                for text_class in TEXT_RICH_CLASSES
+            )
+            
+            if is_text_rich:
                 # Extract and rectify the region
                 if 'obb' in detection:
                     # Use OBB geometry
@@ -383,11 +391,14 @@ def entrypoint():
     """
     Entrypoint for Ray Serve: serve run core.inference_graph:entrypoint
     """
-    # Get model path from environment or use default
-    model_path = os.getenv(
-        'YOLO_MODEL_PATH',
-        '/home/runner/work/hvac-ai/hvac-ai/ai_model/best.pt'
-    )
+    # Get model path from environment or use relative default
+    # Try to find model relative to the current directory structure
+    default_model = os.path.join(os.getcwd(), 'ai_model', 'best.pt')
+    if not os.path.exists(default_model):
+        # Try parent directory
+        default_model = os.path.join(os.path.dirname(os.getcwd()), 'ai_model', 'best.pt')
+    
+    model_path = os.getenv('YOLO_MODEL_PATH', default_model)
     
     conf_threshold = float(os.getenv('CONF_THRESHOLD', '0.5'))
     

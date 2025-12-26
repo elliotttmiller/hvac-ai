@@ -259,8 +259,8 @@ class GeometryUtils:
         """
         h, w = image_shape
         
-        # Check if center is within image bounds
-        if not (0 <= obb.x_center <= w and 0 <= obb.y_center <= h):
+        # Check if center is within image bounds (strict inequalities for upper bounds)
+        if not (0 <= obb.x_center < w and 0 <= obb.y_center < h):
             return False
         
         # Check if dimensions are positive and reasonable

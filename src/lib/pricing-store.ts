@@ -93,6 +93,10 @@ export const useQuoteStore = create<QuoteStore>((set, get) => ({
     const { quote, localOverrides, settings } = get();
     if (!quote) return null;
     
+    // Note: This recalculation does NOT reapply regional multipliers from the original quote.
+    // Regional multipliers are baked into the unit costs when the quote is first generated.
+    // If you need to change the location, generate a new quote instead.
+    
     // Recalculate line items with local overrides
     const updatedLineItems = quote.line_items.map((item) => {
       const override = localOverrides[item.category];

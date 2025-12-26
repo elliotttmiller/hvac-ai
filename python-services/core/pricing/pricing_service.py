@@ -66,6 +66,9 @@ class PricingEngine:
     Pricing Engine that converts YOLO detection results into financial quotes.
     Applies regional multipliers and calculates materials + labor costs.
     """
+    
+    # Class-level constants for efficient currency rounding
+    _CURRENCY_PRECISION = Decimal('0.01')
 
     def __init__(self, catalog_path: Optional[Path] = None):
         """
@@ -112,15 +115,20 @@ class PricingEngine:
         """
         multipliers = self.catalog['regional_multipliers']
         
-        # Try exact match first
-        if location in multipliers:
-            return multipliers[location]
-        
-        # Try partial match (e.g., "Chicago" matches "Chicago, IL")
+        # Try exact match first (case-insensitive)
         location_lower = location.lower()
         for key in multipliers:
-            if location_lower in key.lower() or key.lower() in location_lower:
-                logger.info(f"Matched location '{location}' to '{key}'")
+            if location_lower == key.lower():
+                return multipliers[key]
+        
+        # Try prefix match for city names (e.g., "Chicago" matches "Chicago, IL")
+        for key in multipliers:
+            key_lower = key.lower()
+            # Check if location starts with the catalog key or vice versa
+            # Only match if one is a clear prefix of the other
+            if (location_lower.startswith(key_lower.split(',')[0]) or 
+                key_lower.startswith(location_lower.split(',')[0])):
+                logger.info(f"Matched location '{location}' to '{key}' (prefix match)")
                 return multipliers[key]
         
         # Fall back to default
@@ -167,7 +175,7 @@ class PricingEngine:
 
     def _round_currency(self, value: float) -> float:
         """Round currency value to 2 decimal places"""
-        return float(Decimal(str(value)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP))
+        return float(Decimal(str(value)).quantize(self._CURRENCY_PRECISION, rounding=ROUND_HALF_UP))
 
     def generate_quote(self, request: QuoteRequest) -> QuoteResponse:
         """

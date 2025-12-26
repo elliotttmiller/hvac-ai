@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useQuoteStore } from '@/lib/pricing-store';
 import { generateQuote } from '@/lib/api-client';
@@ -35,9 +35,12 @@ export default function QuoteDashboard({
   const [viewerExpanded, setViewerExpanded] = useState(true);
   const [hoveredCategory, setHoveredCategory] = useState<string | null>(null);
   
+  const hasAttemptedGeneration = useRef(false);
+  
   // Auto-generate quote on mount
   useEffect(() => {
-    if (!quote && analysisResult && !isGenerating) {
+    if (!hasAttemptedGeneration.current && !quote && analysisResult && !isGenerating) {
+      hasAttemptedGeneration.current = true;
       handleGenerateQuote();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -26,9 +26,7 @@ export function useCountUp(end: number, duration: number = 1000): number {
     animationFrame = requestAnimationFrame(animate);
 
     return () => {
-      if (animationFrame) {
-        cancelAnimationFrame(animationFrame);
-      }
+      cancelAnimationFrame(animationFrame);
     };
   }, [end, duration]);
 

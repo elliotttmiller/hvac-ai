@@ -62,9 +62,19 @@ export async function generateQuote(request: GenerateQuoteRequest): Promise<Gene
 }
 
 /**
- * Export quote to CSV format
+ * Export quote to CSV format with proper RFC 4180 compliant escaping
  */
 export function exportQuoteToCSV(quote: Quote, projectId: string): void {
+  // Helper to escape CSV cells
+  const escapeCell = (cell: string | number): string => {
+    const str = String(cell);
+    // If cell contains comma, quote, or newline, wrap in quotes and escape internal quotes
+    if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+      return `"${str.replace(/"/g, '""')}"`;
+    }
+    return str;
+  };
+  
   const rows = [
     ['Project ID', projectId],
     ['Quote ID', quote.quote_id],
@@ -88,7 +98,7 @@ export function exportQuoteToCSV(quote: Quote, projectId: string): void {
     ['Final Price (with margin)', '', '', '', '', '', `$${quote.summary.final_price.toFixed(2)}`]
   ];
   
-  const csvContent = rows.map(row => row.map(cell => `"${cell}"`).join(',')).join('\n');
+  const csvContent = rows.map(row => row.map(escapeCell).join(',')).join('\n');
   const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
   const link = document.createElement('a');
   const url = URL.createObjectURL(blob);

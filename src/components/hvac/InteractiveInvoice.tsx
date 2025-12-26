@@ -171,8 +171,11 @@ export default function InteractiveInvoice({ projectId, onCategoryHover }: Inter
                           <Label className="text-xs">Quantity</Label>
                           <Input
                             type="number"
-                            value={editValues.count}
-                            onChange={(e) => setEditValues({ ...editValues, count: Number(e.target.value) })}
+                            value={editValues.count ?? 0}
+                            onChange={(e) => {
+                              const count = Math.max(0, parseInt(e.target.value) || 0);
+                              setEditValues({ ...editValues, count });
+                            }}
                             className="h-8 text-sm font-mono"
                             min={0}
                           />
@@ -181,8 +184,11 @@ export default function InteractiveInvoice({ projectId, onCategoryHover }: Inter
                           <Label className="text-xs">Material Cost</Label>
                           <Input
                             type="number"
-                            value={editValues.unit_cost}
-                            onChange={(e) => setEditValues({ ...editValues, unit_cost: Number(e.target.value) })}
+                            value={editValues.unit_cost ?? 0}
+                            onChange={(e) => {
+                              const unit_cost = Math.max(0, parseFloat(e.target.value) || 0);
+                              setEditValues({ ...editValues, unit_cost });
+                            }}
                             className="h-8 text-sm font-mono"
                             min={0}
                             step={0.01}

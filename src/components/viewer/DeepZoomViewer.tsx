@@ -37,18 +37,41 @@ function getColorForLabel(label: string): string {
   return CLASS_COLORS.default;
 }
 
-function drawLabel(ctx: CanvasRenderingContext2D, label: string, score: number, x: number, y: number, color: string, isHighlighted: boolean) {
-  const labelText = `${label} ${Math.round(score * 100)}%`;
-  ctx.font = isHighlighted ? 'bold 14px sans-serif' : '12px sans-serif';
-  const metrics = ctx.measureText(labelText);
+function drawLabel(
+  ctx: CanvasRenderingContext2D,
+  label: string,
+  score: number,
+  x: number,
+  y: number,
+  color: string,
+  isHighlighted: boolean,
+  textContent?: string,
+  textConfidence?: number
+) {
+  // Prefer extracted text content over class label if available
+  const displayText = textContent 
+    ? `${textContent} (${Math.round((textConfidence || 0) * 100)}%)`
+    : `${label} ${Math.round(score * 100)}%`;
+  
+  // Use monospace font for extracted text to signify "Read Data"
+  const fontFamily = textContent ? 'monospace' : 'sans-serif';
+  ctx.font = isHighlighted 
+    ? `bold 14px ${fontFamily}` 
+    : `12px ${fontFamily}`;
+  
+  const metrics = ctx.measureText(displayText);
   const padding = 4;
   const labelWidth = metrics.width + padding * 2;
   const labelHeight = 20;
 
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+  // High-contrast background for extracted text
+  const bgColor = textContent ? 'rgba(0, 255, 0, 0.9)' : 'rgba(0, 0, 0, 0.8)';
+  ctx.fillStyle = bgColor;
   ctx.fillRect(x, y - labelHeight - 2, labelWidth, labelHeight);
-  ctx.fillStyle = color;
-  ctx.fillText(labelText, x + padding, y - 6);
+  
+  // Text color - black for extracted text for better contrast on green background
+  ctx.fillStyle = textContent ? '#000000' : color;
+  ctx.fillText(displayText, x + padding, y - 6);
 }
 
 export default function DeepZoomViewer({
@@ -221,7 +244,17 @@ export default function DeepZoomViewer({
       ctx.stroke();
 
       if (firstPoint && (shouldShowLabels || isSelected || isHovered)) {
-        drawLabel(ctx, ann.label, ann.score, firstPoint[0], firstPoint[1], color, isSelected || isHovered);
+        drawLabel(
+          ctx, 
+          ann.label, 
+          ann.score, 
+          firstPoint[0], 
+          firstPoint[1], 
+          color, 
+          isSelected || isHovered,
+          ann.textContent,
+          ann.textConfidence
+        );
       }
     }
   }, [getViewportBounds, imageToCanvas, isReady, renderConfig, spatialIndex, selectedId, hoveredId]);

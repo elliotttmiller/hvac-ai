@@ -50,6 +50,8 @@ svgwrite>=1.4.0  # For synthetic data generation
 # =============================================================================
 pytesseract>=0.3.10
 easyocr>=1.7.0
+paddlepaddle>=2.5.0  # PaddlePaddle for PaddleOCR
+paddleocr>=2.7.0     # PaddleOCR for advanced text extraction
 
 # =============================================================================
 # Data Processing
@@ -63,6 +65,11 @@ scikit-learn>=1.3.0
 # =============================================================================
 networkx>=3.1  # System graph construction and analysis
 rtree>=1.0.0   # R-tree spatial indexing for proximity queries
+
+# =============================================================================
+# Distributed Inference and Deployment
+# =============================================================================
+ray[serve]>=2.9.0  # Ray Serve for distributed inference graph
 
 # =============================================================================
 # Performance Optimization

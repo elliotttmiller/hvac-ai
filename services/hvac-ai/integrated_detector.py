@@ -17,9 +17,9 @@ from pathlib import Path
 
 from .yoloplan_detector import create_yoloplan_detector, YOLOplanDetector
 from .yoloplan_bom import create_bom_generator, create_connectivity_analyzer
-from .detector import HVACDetector
-from ..document.enhanced_processor import create_enhanced_processor
-from ..document.hybrid_processor import create_hybrid_processor
+from .hvac_detector import HVACDetector
+from services.hvac_document.enhanced_document_processor import create_enhanced_processor
+from services.hvac_document.hybrid_document_processor import create_hybrid_processor
 
 logger = logging.getLogger(__name__)
 

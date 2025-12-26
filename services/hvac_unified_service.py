@@ -1,4 +1,4 @@
-# services/hvac-analysis/hvac_analysis_service.py
+# services/hvac_unified_service.py
 
 from fastapi import FastAPI, File, UploadFile, HTTPException, Form, Request
 from fastapi.responses import StreamingResponse
@@ -29,7 +29,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("API_SERVER")
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 env_file = PROJECT_ROOT / ".env"
 load_dotenv(dotenv_path=env_file)
 
@@ -37,13 +37,13 @@ MODEL_PATH = os.getenv("MODEL_PATH")
 
 import sys
 sys.path.append(str(PROJECT_ROOT))
-from core.ai.yolo_inference import create_yolo_engine
-from core.pricing.pricing_service import PricingEngine, QuoteRequest
+from services.hvac_ai.yolo_inference import create_yolo_engine
+from services.hvac_domain.pricing.pricing_service import PricingEngine, QuoteRequest
 
 # Try to import pipeline (may not be available if dependencies missing)
 try:
-    from core.ai.pipeline_api import router as pipeline_router, initialize_pipeline
-    from core.ai.pipeline_models import PipelineConfig
+    from services.hvac_ai.pipeline_api import router as pipeline_router, initialize_pipeline
+    from services.hvac_ai.pipeline_models import PipelineConfig
     PIPELINE_AVAILABLE = True
 except ImportError as e:
     logger.warning(f"⚠️  Pipeline not available: {e}")

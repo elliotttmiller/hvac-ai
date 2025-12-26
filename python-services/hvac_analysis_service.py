@@ -38,6 +38,7 @@ MODEL_PATH = os.getenv("MODEL_PATH")
 import sys
 sys.path.append(str(PROJECT_ROOT))
 from core.ai.yolo_inference import create_yolo_engine
+from core.pricing.pricing_service import PricingEngine, QuoteRequest
 
 # Try to import pipeline (may not be available if dependencies missing)
 try:
@@ -52,10 +53,21 @@ except ImportError as e:
 
 # --- LIFESPAN ---
 ml_models = {}
+pricing_engine = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global pricing_engine
     logger.info("🟢 Server Starting...")
+    
+    # Initialize Pricing Engine
+    try:
+        logger.info("🔄 Initializing Pricing Engine...")
+        pricing_engine = PricingEngine()
+        logger.info("✅ Pricing Engine initialized successfully")
+    except Exception as e:
+        logger.error(f"❌ Pricing Engine Init Failed: {e}", exc_info=True)
+        logger.error("   Quote generation endpoints may not work")
     
     if not MODEL_PATH:
         logger.error("❌ MODEL_PATH environment variable not set")
@@ -383,3 +395,52 @@ async def save_annotation_delta(request: Request):
     except Exception as e:
         logger.error(f"❌ [API] Save Error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/v1/quote/generate")
+async def generate_quote(request: Request):
+    """
+    Generate a financial quote from HVAC analysis data.
+    
+    Request body should contain:
+    - project_id: Project identifier
+    - location: Location string (e.g., "Chicago, IL")
+    - analysis_data: Object with total_objects and counts_by_category
+    - settings: Optional pricing settings (margin_percent, tax_rate, labor_hourly_rate)
+    
+    Returns:
+    - quote_id: Generated quote identifier
+    - currency: Currency code (USD)
+    - summary: Cost breakdown (materials, labor, total, final_price)
+    - line_items: Detailed line items for each component category
+    """
+    logger.info(f"📡 [API] Received Quote Generation Request")
+    
+    if not pricing_engine:
+        logger.error("Pricing engine not loaded")
+        raise HTTPException(
+            status_code=503,
+            detail="Pricing engine not initialized. Check server logs."
+        )
+    
+    try:
+        # Parse request body as QuoteRequest model
+        payload = await request.json()
+        quote_request = QuoteRequest(**payload)
+        
+        logger.info(f"📊 [QUOTE] Project: {quote_request.project_id}, Location: {quote_request.location}")
+        logger.info(f"📊 [QUOTE] Total objects: {quote_request.analysis_data.total_objects}")
+        
+        # Generate quote
+        quote_response = pricing_engine.generate_quote(quote_request)
+        
+        logger.info(f"✅ [QUOTE] Generated: {quote_response.quote_id}, Final Price: ${quote_response.summary.final_price}")
+        
+        # Return as dict (Pydantic models serialize automatically)
+        return quote_response.model_dump()
+        
+    except ValueError as e:
+        logger.error(f"❌ [API] Validation Error: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"❌ [API] Quote Generation Error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Quote generation failed: {str(e)}")

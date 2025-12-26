@@ -143,6 +143,10 @@ async def health_check():
                 # Add class count
                 if hasattr(model_info, 'names'):
                     response["num_classes"] = len(model_info.names)
+
+                # Expose model type (obb / standard) if the engine provides it
+                if hasattr(engine, 'model_type'):
+                    response["model_type"] = getattr(engine, 'model_type')
         except Exception as e:
             # best-effort only - don't fail health check
             logger.debug(f"Could not extract model info: {e}")

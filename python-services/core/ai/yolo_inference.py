@@ -30,11 +30,27 @@ class YOLOInferenceEngine:
             self.model = YOLO(self.model_path)
             self.model.to(self.device)
             
-            # Warm-up inference to prepare model
+            # Detect whether this model supports oriented bounding boxes (OBB).
+            # Newer/OBB-trained YOLO variants may expose a `predict_obb` API or
+            # have 'obb' in the model path name. Prefer explicit method check.
+            self.is_obb = hasattr(self.model, 'predict_obb') or ('obb' in str(self.model_path).lower())
+            self.model_type = 'obb' if self.is_obb else 'standard'
+
+            # Warm-up inference to prepare model. Use the appropriate method for
+            # OBB models when available so the model is initialized on the right
+            # codepaths (and moved to GPU if applicable).
             dummy_input = np.zeros((640, 640, 3), dtype=np.uint8)
-            self.model.predict(dummy_input, verbose=False)
-            
-            logger.info(f"✅ Model loaded successfully. Classes: {len(self.model.names)}")
+            try:
+                if self.is_obb and hasattr(self.model, 'predict_obb'):
+                    # Some implementations may require different signature
+                    self.model.predict_obb(dummy_input, verbose=False)
+                else:
+                    self.model.predict(dummy_input, verbose=False)
+            except Exception:
+                # Do not fail startup for warm-up issues; log and continue
+                logger.debug('Warm-up inference failed (non-fatal)', exc_info=True)
+
+            logger.info(f"✅ Model loaded successfully. Type: {self.model_type} | Classes: {len(self.model.names)}")
             logger.info(f"📋 Available classes: {list(self.model.names.values())}")
         except FileNotFoundError:
             logger.error(f"❌ Model file not found at: {self.model_path}")
@@ -79,12 +95,58 @@ class YOLOInferenceEngine:
         if progress_callback:
             progress_callback({"type": "status", "message": "Starting inference...", "percent": 10})
         
-        results = self.model.predict(
-            image, 
-            conf=0.25, 
-            iou=0.45, 
-            verbose=False
-        )[0]
+        # Run model prediction. Some versions of the ultralytics model may
+        # return an empty list or results object with `boxes` set to None
+        # under certain failure modes—handle that defensively to avoid
+        # raising TypeError: 'NoneType' object is not iterable when iterating
+        # over `results.boxes` below.
+        # Use OBB prediction API when available for oriented bounding box models.
+        predict_kwargs = dict(conf=conf_threshold, iou=0.45, verbose=False)
+        try:
+            if getattr(self, 'is_obb', False) and hasattr(self.model, 'predict_obb'):
+                raw_preds = self.model.predict_obb(image, **predict_kwargs)
+            else:
+                raw_preds = self.model.predict(image, **predict_kwargs)
+        except Exception as e:
+            logger.exception('Model prediction failed')
+            raise
+
+        if not raw_preds:
+            logger.warning("⚠️ Model returned no predictions (empty raw_preds)")
+            processing_time_ms = (time.perf_counter() - start_time) * 1000
+            if progress_callback:
+                progress_callback({"type": "progress", "message": "No detections", "percent": 100})
+            return {
+                "total_objects_found": 0,
+                "counts_by_category": {},
+                "segments": [],
+                "processing_time_ms": processing_time_ms,
+            }
+
+        results = raw_preds[0]
+
+        # Defensive check: results.boxes may be None in some cases. Some models
+        # (OBB variants) place detections under `results.obb`. Prefer boxes,
+        # fall back to obb, and if neither exist return an empty result.
+        boxes_iterable = getattr(results, "boxes", None)
+        is_obb_mode = False
+        if boxes_iterable is None or (hasattr(boxes_iterable, '__len__') and len(boxes_iterable) == 0):
+            obb_iterable = getattr(results, "obb", None)
+            if obb_iterable is not None and (not hasattr(obb_iterable, '__len__') or len(obb_iterable) > 0):
+                boxes_iterable = obb_iterable
+                is_obb_mode = True
+
+        if boxes_iterable is None or (hasattr(boxes_iterable, '__len__') and len(boxes_iterable) == 0):
+            logger.warning("⚠️ Prediction result has no 'boxes' or 'obb' (None or empty). Returning empty detections.")
+            processing_time_ms = (time.perf_counter() - start_time) * 1000
+            if progress_callback:
+                progress_callback({"type": "progress", "message": "No detections", "percent": 100})
+            return {
+                "total_objects_found": 0,
+                "counts_by_category": {},
+                "segments": [],
+                "processing_time_ms": processing_time_ms,
+            }
 
         # Send inference complete progress
         if progress_callback:
@@ -99,32 +161,66 @@ class YOLOInferenceEngine:
         skipped_text = 0 # New counter for text rejection
         skipped_conf = 0
 
-        for i, box in enumerate(results.boxes):
-            cls_id = int(box.cls[0])
-            class_name = self.model.names[cls_id]
-            confidence = float(box.conf[0])
-            
-            x1, y1, x2, y2 = box.xyxy[0].cpu().numpy().astype(int)
+        # Use the boxes iterable we validated above
+        for i, box in enumerate(boxes_iterable):
+            # Class id and score extraction should work for both standard and
+            # OBB results; be defensive in case underlying tensor shapes differ.
+            try:
+                cls_id = int(box.cls[0])
+            except Exception:
+                # Fallback: some outputs may store cls as a scalar
+                try:
+                    cls_id = int(box.cls)
+                except Exception:
+                    cls_id = 0
+
+            class_name = self.model.names.get(cls_id, str(cls_id)) if hasattr(self.model, 'names') else str(cls_id)
+
+            try:
+                confidence = float(box.conf[0])
+            except Exception:
+                try:
+                    confidence = float(box.conf)
+                except Exception:
+                    confidence = 0.0
+
+            # Extract bbox coordinates; OBB boxes may not expose `xyxy` in the
+            # same way as standard boxes. Try common access patterns and fall
+            # back to a zero-box to avoid crashes.
+            try:
+                raw_xy = box.xyxy[0].cpu().numpy().astype(int)
+                x1, y1, x2, y2 = map(int, raw_xy.tolist())
+            except Exception:
+                try:
+                    # Some OBB outputs may expose `.xyxy` directly or as a list
+                    raw_xy = getattr(box, 'xyxy')
+                    if hasattr(raw_xy, '__len__'):
+                        arr = raw_xy[0].cpu().numpy().astype(int)
+                        x1, y1, x2, y2 = map(int, arr.tolist())
+                    else:
+                        x1 = y1 = x2 = y2 = 0
+                except Exception:
+                    x1 = y1 = x2 = y2 = 0
             w = x2 - x1
             h = y2 - y1
             box_area = w * h
-            
+
             # --- FILTER 1: CONFIDENCE ---
             if confidence < conf_threshold:
                 skipped_conf += 1
                 continue
 
             # --- FILTER 2: SIZE (Anti-Hallucination) ---
-            if (box_area / image_area) > 0.10: 
+            if (box_area / image_area) > 0.10:
                 skipped_huge += 1
-                continue 
+                continue
 
             # --- FILTER 3: ASPECT RATIO (Anti-Text) ---
             # Text blocks are usually wide and short.
             # Valves are usually square (1:1) or slightly rectangular (up to 2.5:1).
             # If Width is > 3x Height, it's almost certainly text.
             aspect_ratio = w / float(h)
-            if aspect_ratio > 3.0: 
+            if aspect_ratio > 3.0:
                 skipped_text += 1
                 continue
 
@@ -138,6 +234,7 @@ class YOLOInferenceEngine:
                 "label": class_name,
                 "score": confidence,
                 "bbox": bbox,
+                "obb_mode": bool(is_obb_mode),
             })
 
         logger.info(f"🗑️ [FILTERS] Removed: {skipped_huge} Huge | {skipped_text} Text/Wide | {skipped_conf} Low Conf")

@@ -19,6 +19,15 @@ export interface Segment {
     height: number;
     rotation: number; // radians
   };
+  // Optional unique identifier for the segment (frontend expects `id`)
+  id?: string | number;
+  // Optional polygon points (array of [x,y]) — used for OBB corner polygons or segmentation
+  points?: number[][];
+  // Optional rotation in radians (duplicate to obb.rotation for convenience)
+  rotation?: number;
+  // Display hints used by the UI
+  displayFormat?: 'bbox' | 'polygon' | 'obb';
+  displayMask?: unknown | null;
   // Deprecated fields (kept for backward compatibility)
   mask?: never;
   polygon?: never;

@@ -49,6 +49,8 @@ export interface EditableAnnotation {
     height: number;
     rotation: number; // radians
   };
+  // Optional precomputed polygon corner points for OBB rendering (image coordinates)
+  points?: number[][];
   isDirty: boolean;
   isNew: boolean;
 }

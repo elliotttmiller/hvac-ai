@@ -55,6 +55,17 @@ export function useAnnotationStore() {
         const w = obb.width;
         const h = obb.height;
         bbox = [cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2];
+      } else if (Array.isArray(seg.points) && seg.points.length > 0) {
+        // If polygon points are provided (OBB corners), compute AABB from points
+        const xs = seg.points.map((p) => p[0]);
+        const ys = seg.points.map((p) => p[1]);
+        const minX = Math.min(...xs);
+        const minY = Math.min(...ys);
+        const maxX = Math.max(...xs);
+        const maxY = Math.max(...ys);
+        bbox = [minX, minY, maxX, maxY];
+        // preserve points in the annotation for precise rendering
+        obb = undefined; // keep obb undefined when only points provided
       } else if (Array.isArray(seg.bbox) && seg.bbox.length === 4) {
         const [x1, y1, x2, y2] = seg.bbox;
         bbox = [x1, y1, x2, y2];
@@ -66,6 +77,8 @@ export function useAnnotationStore() {
         score: seg.score,
         bbox,
         obb,
+  // copy polygon points if the segment provided them (useful for precise OBB rendering)
+  points: Array.isArray(seg.points) ? seg.points : undefined,
         isDirty: false,
         isNew: false,
       };

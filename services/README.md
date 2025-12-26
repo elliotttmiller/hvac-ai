@@ -15,13 +15,23 @@ API Gateway for routing and orchestration:
 
 ### 2. HVAC AI (`hvac-ai/`)
 Core AI services for HVAC analysis:
+- **YOLO Inference:** YOLOv11-obb for component detection
 - **SAHI Engine:** Slice-aided inference for large blueprints
 - **Prompt Engineering:** Domain-specific prompting framework
-- **Model Ensemble:** Multi-model prediction fusion
+- **Integrated Detector:** Complete YOLOplan integration
+- **VLM (Vision Language Models):** Advanced vision-language capabilities
+- **Pipeline:** End-to-end drawing analysis pipeline
 
 **Key Modules:**
 - `hvac_sahi_engine.py` - SAHI-powered component detection
 - `hvac_prompt_engineering.py` - Professional prompt templates
+- `yolo_inference.py` - YOLO model inference engine
+- `hvac_pipeline.py` - End-to-end HVAC drawing analyzer
+- `pipeline_models.py` - Data models for pipeline
+- `integrated_detector.py` - Integrated detection system
+- `yoloplan_detector.py` - YOLOplan MEP symbol detection
+- `yoloplan_bom.py` - BOM generation and connectivity
+- `vlm/` - Vision Language Model components
 
 ### 3. HVAC Document (`hvac-document/`)
 Document processing and enhancement:
@@ -29,9 +39,17 @@ Document processing and enhancement:
 - Quality assessment and adaptive enhancement
 - Multi-page blueprint handling
 - HVAC symbol extraction
+- Enhanced document processing with OCR
+- Hybrid processing capabilities
+- Table extraction
 
 **Key Modules:**
 - `hvac_document_processor.py` - Document processing pipeline
+- `hvac_symbol_library.py` - Symbol library and recognition
+- `enhanced_document_processor.py` - Enhanced processing with caching
+- `hybrid_document_processor.py` - Hybrid OCR processing
+- `table_extractor.py` - Table detection and extraction
+- `document_processor.py` - Base document processor
 
 ### 4. HVAC Domain (`hvac-domain/`)
 Business logic and domain rules:
@@ -39,11 +57,72 @@ Business logic and domain rules:
 - ASHRAE/SMACNA compliance validation
 - HVAC engineering rules engine
 - Component connectivity graphs
+- Cost estimation
+- Pricing services
+- Location intelligence
 
 **Key Modules:**
 - `hvac_system_engine.py` - Relationship and validation engine
+- `hvac_compliance_analyzer.py` - Compliance checking
+- `relationship_graph.py` - System relationship analysis
+- `compliance/` - Compliance standards (ASHRAE, IMC, SMACNA)
+- `system_analysis/` - System analysis tools
+- `estimation/` - Cost estimation
+- `pricing/` - Pricing services
+- `location/` - Location intelligence
 
-## Usage
+## Unified Service
+
+The `hvac_unified_service.py` provides a consolidated FastAPI application that integrates all services into a single deployment unit.
+
+```bash
+# Start the unified service
+python services/hvac_unified_service.py
+```
+
+## Import Compatibility
+
+The repository uses shim packages (`hvac_ai`, `hvac_document`, `hvac_domain`) to enable Python imports from the hyphenated directories (`hvac-ai`, `hvac-document`, `hvac-domain`). You can import using either style:
+
+```python
+# Using shim packages (recommended for compatibility)
+from services.hvac_ai.hvac_pipeline import create_hvac_analyzer
+from services.hvac_document.enhanced_document_processor import create_enhanced_processor
+from services.hvac_domain.hvac_system_engine import HVACSystemEngine
+
+# Direct imports also work when the package is properly configured
+from services.hvac_ai import create_hvac_analyzer
+```
+
+## Usage Examples
+
+### HVAC Pipeline (End-to-End Analysis)
+
+```python
+from services.hvac_ai.hvac_pipeline import create_hvac_analyzer
+from services.hvac_ai.pipeline_models import PipelineConfig
+
+# Create analyzer with configuration
+config = PipelineConfig(
+    confidence_threshold=0.7,
+    max_processing_time_ms=25.0,
+    enable_gpu=True
+)
+
+analyzer = create_hvac_analyzer(
+    model_path="./models/yolo11m-obb-hvac.pt",
+    config=config
+)
+
+# Analyze a drawing
+result = analyzer.analyze_drawing("drawing.png")
+
+if result.success:
+    print(f"Detections: {len(result.detection_result.detections)}")
+    print(f"Text regions: {len(result.text_results)}")
+    print(f"Interpretations: {len(result.interpretation_result.interpretations)}")
+    print(f"Total time: {result.total_processing_time_ms:.2f}ms")
+```
 
 ### HVAC SAHI Engine
 
@@ -125,22 +204,15 @@ ai_response = your_ai_model.analyze(prompt, image)
 ### Document Processing
 
 ```python
-from services.hvac_document.hvac_document_processor import (
-    create_hvac_document_processor,
-    BlueprintFormat
-)
+from services.hvac_document.enhanced_document_processor import create_enhanced_processor
 
 # Create processor
-processor = create_hvac_document_processor(config={
-    "target_dpi": 300,
-    "enhance_ductwork_lines": True,
-    "enhance_symbols": True
-})
+processor = create_enhanced_processor(use_cache=True)
 
 # Process blueprint
 result = processor.process_document(
     file_path="hvac_plan.pdf",
-    format_hint=BlueprintFormat.PDF
+    enhance_quality=True
 )
 
 # Access processed pages

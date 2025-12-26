@@ -414,8 +414,10 @@ export default function InferenceAnalysis({ initialImage, initialSegments, initi
     setSegments([]);
     setCountResult(null);
 
-    const formData = new FormData();
-    formData.append('image', uploadedImage);
+  const formData = new FormData();
+  // Append both keys to be compatible with different backends/proxies
+  formData.append('image', uploadedImage);
+  formData.append('file', uploadedImage);
     
     // Industry-standard YOLO confidence threshold (0.50 = balanced precision/recall)
     // Lower values (0.25-0.40) = more detections but more false positives

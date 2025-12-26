@@ -116,7 +116,9 @@ export default function FileUpload({ projectId, onUploadComplete, onUploadError 
       ));
 
       const formData = new FormData();
-      formData.append('file', uploadFile.file);
+  // Append under both common field names to ensure backend compatibility
+  formData.append('file', uploadFile.file);
+  formData.append('image', uploadFile.file);
       if (projectId) {
         formData.append('projectId', projectId);
       }

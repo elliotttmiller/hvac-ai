@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useCallback } from 'react';
+import type { FileRejection } from 'react-dropzone';
 import { useRouter } from 'next/navigation';
 import type { AnalysisResult, Segment } from '@/types/analysis';
 import { useDropzone } from 'react-dropzone';
@@ -45,7 +46,7 @@ export default function HVACBlueprintUploader({ onAnalysisComplete }: HVACBluepr
   const [projectId, setProjectId] = useState('');
   const [location, setLocation] = useState('');
 
-  const onDrop = useCallback((acceptedFiles: File[], rejectedFiles: any[]) => {
+  const onDrop = useCallback((acceptedFiles: File[], rejectedFiles: FileRejection[]) => {
     // Handle rejected files first
     if (rejectedFiles && rejectedFiles.length > 0) {
       const rejection = rejectedFiles[0];
@@ -100,10 +101,30 @@ export default function HVACBlueprintUploader({ onAnalysisComplete }: HVACBluepr
     setProgress(10);
     
     try {
-      const formData = new FormData();
-      formData.append('file', uploadedFile.file);
+  const formData = new FormData();
+  // Append under both common keys to maximize compatibility with
+  // different backend expectations (some servers expect 'file',
+  // others 'image'). Duplicating the file field is low-risk and
+  // helps avoid 422 'field required' errors when routed through
+  // proxies or third-party tunnels (ngrok).
+  formData.append('file', uploadedFile.file);
+  formData.append('image', uploadedFile.file);
       if (projectId) formData.append('projectId', projectId);
       if (location) formData.append('location', location);
+
+      // Debug: log top-level entries so we can quickly diagnose malformed
+      // requests when debugging remote tunnels (ngrok). Browsers will
+      // print File objects usefully in DevTools.
+      if (process.env.NODE_ENV !== 'production') {
+        try {
+          for (const pair of formData.entries()) {
+            // pair: [string, FormDataEntryValue]
+            console.debug('FormData entry:', pair[0], pair[1] instanceof File ? `${pair[1].name} (File)` : pair[1]);
+          }
+        } catch (e) {
+          // ignore - debugging only
+        }
+      }
 
       // Use streaming endpoint through the Next.js proxy. We request
       // SSE by setting Accept and adding ?stream=1 so the proxy forwards
@@ -120,15 +141,29 @@ export default function HVACBlueprintUploader({ onAnalysisComplete }: HVACBluepr
       });
 
       if (!response.ok) {
-        // Try to parse error message from response
+        // Try to parse error message from response. If parsing fails,
+        // include full response text to help diagnose ngrok/proxy errors
+        // that return HTML or plain text.
         let errorMessage = 'Analysis failed';
         try {
-          const errorData = await response.json();
-          errorMessage = errorData.error || errorData.detail || errorMessage;
-        } catch {
-          // If JSON parsing fails, use status text
-          errorMessage = response.statusText || errorMessage;
+          const contentType = response.headers.get('content-type') || '';
+          if (contentType.includes('application/json')) {
+            const errorData = await response.json();
+            errorMessage = errorData.error || errorData.detail || JSON.stringify(errorData) || errorMessage;
+          } else {
+            const txt = await response.text();
+            errorMessage = txt || response.statusText || errorMessage;
+          }
+        } catch (parseErr) {
+          errorMessage = response.statusText || String(parseErr) || errorMessage;
         }
+
+        // Surface special hint for 422 which often means multipart/form-data
+        // did not contain a file field.
+        if (response.status === 422) {
+          errorMessage = `Unprocessable Entity (422) - server expects multipart form field 'file' or 'image'. Server response: ${errorMessage}`;
+        }
+
         throw new Error(errorMessage);
       }
       

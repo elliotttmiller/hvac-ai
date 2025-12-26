@@ -117,8 +117,10 @@ export default function DeepZoomInferenceAnalysis() {
 
     setIsAnalyzing(true);
 
-    const formData = new FormData();
-    formData.append('image', uploadedImage);
+  const formData = new FormData();
+  // Provide both names for the uploaded file to maximize compatibility
+  formData.append('image', uploadedImage);
+  formData.append('file', uploadedImage);
     formData.append('conf_threshold', '0.50');
     formData.append('nms_threshold', '0.45');
 

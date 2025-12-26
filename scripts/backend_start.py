@@ -3,9 +3,10 @@ from fastapi import FastAPI, UploadFile, File, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import numpy as np
-import cv2
-import torch
-from ultralytics import YOLO
+# Heavy ML imports are deferred when SKIP_MODEL is enabled
+cv2 = None
+torch = None
+YOLO = None
 import logging
 import sys
 import uuid
@@ -14,12 +15,12 @@ import os
 
 # --- CONFIGURATION ---
 # UPDATE THIS to your local .pt file path
-MODEL_PATH = r"C:\path\to\your\best.pt"
+MODEL_PATH = r"D:\AMD\hvac-ai\ai_model\models\yolo11m_run_v10\weights\best.pt"
 PORT = 8000
 CONF_THRES = 0.50
 IOU_THRES = 0.45
 IMG_SIZE = 1024
-HALF = torch.cuda.is_available()
+# HALF will be set after importing torch (if model is loaded); default false
 
 # --- LOGGING SETUP ---
 logging.basicConfig(
@@ -41,11 +42,20 @@ app.add_middleware(
 )
 
 model = None
+HALF = False
+
+# Dev mode: skip loading heavy ML stack
+# Can be enabled via environment variable SKIP_MODEL=1 or CLI arg --no-model
+SKIP_MODEL = os.environ.get("SKIP_MODEL", "0") == "1" or any(a in ("--no-model", "--skip-model") for a in sys.argv)
 
 
 @app.on_event("startup")
 async def load_model():
     global model
+    if SKIP_MODEL:
+        logger.warning("SKIP_MODEL is enabled — skipping heavy ML imports and model load (dev mode).")
+        return
+
     if not os.path.exists(MODEL_PATH):
         logger.error(f"❌ Model not found at: {MODEL_PATH}")
         # We don't exit here to keep the server alive for health checks,
@@ -54,6 +64,17 @@ async def load_model():
 
     logger.info(f"Loading model from {MODEL_PATH}...")
     try:
+        # Import heavy dependencies here so they can be skipped in dev mode
+        global torch, cv2, YOLO, HALF
+        import cv2 as _cv2
+        import torch as _torch
+        from ultralytics import YOLO as _YOLO
+        cv2 = _cv2
+        torch = _torch
+        YOLO = _YOLO
+
+        HALF = torch.cuda.is_available()
+
         model = YOLO(MODEL_PATH)
         if torch.cuda.is_available():
             model.to('cuda')
@@ -75,6 +96,10 @@ def health_check():
 
 
 async def process_image(file_bytes):
+    # If model isn't loaded (either because SKIP_MODEL or failure), raise
+    if model is None:
+        raise HTTPException(status_code=503, detail="Model not loaded")
+
     nparr = np.frombuffer(file_bytes, np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
     if img is None:

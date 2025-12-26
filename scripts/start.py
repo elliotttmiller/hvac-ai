@@ -4,6 +4,7 @@ import sys
 import time
 import threading
 from datetime import datetime
+import json
 
 # Configuration
 # Resolve paths relative to this script so the launcher works when invoked
@@ -12,11 +13,13 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(SCRIPT_DIR)
 BACKEND_SCRIPT = os.path.join(SCRIPT_DIR, "backend_start.py")
 FRONTEND_CMD = "npm run dev"
+# Backend port (should match backend_start.py)
+PORT = 8000
 
 def _ts():
     return datetime.now().strftime("%H:%M:%S")
 
-def start_process(command, name, color_code, env=None):
+def start_process(command, name, color_code, env=None, cwd=None):
     """
     Starts a subprocess and returns the Popen object.
     """
@@ -31,7 +34,7 @@ def start_process(command, name, color_code, env=None):
         command,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT, # Merge stderr into stdout
-        cwd=os.getcwd(),
+        cwd=cwd or os.getcwd(),
         shell=True,
         env=env,
         bufsize=1,
@@ -73,7 +76,8 @@ def main():
         f"{sys.executable} {BACKEND_SCRIPT}", 
         "BACKEND", 
         "\033[36m", 
-        backend_env
+        backend_env,
+        cwd=SCRIPT_DIR,
     )
 
     # 2. Start Frontend (Next.js)
@@ -86,8 +90,55 @@ def main():
         FRONTEND_CMD, 
         "FRONTEND", 
         "\033[32m", 
-        frontend_env
+        frontend_env,
+        cwd=REPO_ROOT,
     )
+
+    # Wait for backend health before starting the frontend
+    def wait_for_backend_health(url: str, timeout: float = 30.0, interval: float = 0.5) -> bool:
+        import time
+        import urllib.request
+        import urllib.error
+
+        deadline = time.time() + timeout
+        # If SKIP_MODEL is set in env, accept either 'healthy' or 'model_not_loaded' as up
+        accept_model_not_loaded = os.environ.get('SKIP_MODEL', '0') == '1'
+
+        while time.time() < deadline:
+            try:
+                with urllib.request.urlopen(url, timeout=2) as resp:
+                    data = resp.read().decode('utf-8')
+                    try:
+                        j = json.loads(data)
+                        status = j.get('status')
+                        if status == 'healthy' or (accept_model_not_loaded and status == 'model_not_loaded'):
+                            print(f"{_ts()} [STARTUP] Backend health OK: {status}")
+                            return True
+                        else:
+                            print(f"{_ts()} [STARTUP] Backend reported status={status}; waiting...")
+                    except Exception:
+                        # non-json response, but server responded
+                        print(f"{_ts()} [STARTUP] Backend responded (non-json), assuming up")
+                        return True
+            except urllib.error.URLError:
+                pass
+            except Exception as e:
+                print(f"{_ts()} [STARTUP] Health check error: {e}")
+            time.sleep(interval)
+        return False
+
+    health_url = f"http://127.0.0.1:{PORT}/health"
+    print(f"{_ts()} [STARTUP] Waiting up to 30s for backend at {health_url}...")
+    ok = wait_for_backend_health(health_url, timeout=30.0, interval=0.5)
+    if not ok:
+        print(f"{_ts()} [STARTUP] Backend failed health check; terminating.")
+        # terminate backend and exit
+        try:
+            if backend_proc.poll() is None:
+                backend_proc.terminate()
+        except Exception:
+            pass
+        return
 
     # 3. Create Threads to stream output simultaneously
     t_backend = threading.Thread(target=stream_output, args=(backend_proc, "BACKEND", "\033[36m"))

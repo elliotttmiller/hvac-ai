@@ -75,6 +75,9 @@ export default function InferenceAnalysis({ initialImage, initialSegments, initi
   const containerRef = useRef<HTMLDivElement>(null);
   const scaleRef = useRef<number>(1);
   const imageRef = useRef<HTMLImageElement | null>(null);
+  // Cache Path2D objects per-segment for fast hit-testing and redraws
+  // Use a Map keyed by segment index (or id) to avoid reconstructing Path2D each frame
+  const pathCacheRef = useRef<Map<number, Path2D>>(new Map());
 
   // --- 1. Image Initialization & Cleanup ---
   useEffect(() => {
@@ -90,11 +93,18 @@ export default function InferenceAnalysis({ initialImage, initialSegments, initi
     // Capture refs for cleanup (avoid stale closure issues)
     const offscreenBg = offscreenBgRef;
     const imageRefCopy = imageRef;
+  const pathCache = pathCacheRef;
     
     // Cleanup on unmount: clear all caches and release memory
     return () => {
       // Clear offscreen canvas
       offscreenBg.current = null;
+      // Clear any cached Path2D objects to free memory
+      try {
+        pathCache.current?.clear();
+      } catch {
+        /* defensive: ignore if not available */
+      }
       // Release image reference
       if (imageRefCopy.current) {
         imageRefCopy.current.src = '';
@@ -282,10 +292,11 @@ export default function InferenceAnalysis({ initialImage, initialSegments, initi
       const overlay = overlayCanvasRef.current;
       if (!bg || !overlay) return;
       const parent = containerRef.current;
-      const availableW = parent ? Math.max(200, parent.clientWidth) : Math.min(img.naturalWidth, window.innerWidth * 0.7);
-      // maintain aspect ratio, compute display size to fit container width
-      const aspect = img.naturalWidth ? img.naturalHeight / img.naturalWidth : 1;
-      const displayW = Math.min(img.naturalWidth, availableW - 32); // small padding
+  const availableW = parent ? Math.max(200, parent.clientWidth) : Math.min(img.naturalWidth, window.innerWidth * 0.7);
+  // maintain aspect ratio, compute display size to fit container width
+  const aspect = img.naturalWidth ? img.naturalHeight / img.naturalWidth : 1;
+  // Fit image to the available container width by default (allow upscaling to fill viewport)
+  const displayW = Math.max(200, availableW - 32); // small padding
       const displayH = Math.round(displayW * aspect);
       // scale ref = display / natural
       scaleRef.current = displayW / img.naturalWidth;
@@ -607,45 +618,40 @@ export default function InferenceAnalysis({ initialImage, initialSegments, initi
               </div>
             </CardHeader>
             
-            <CardContent className="p-0 bg-slate-900 relative min-h-[500px] flex items-center justify-center overflow-auto">
-              <div 
-                className="relative" 
-                ref={containerRef}
-                role="img"
-                aria-label={`HVAC blueprint visualization with ${segments.length} detected components. Use +/- to zoom, arrow keys to pan.`}
-                tabIndex={0}
-                onWheel={handleWheel}
-                onMouseDown={handleMouseDown}
-                onMouseUp={handleMouseUp}
-                onMouseMove={handleMouseMoveCanvas}
-                onMouseLeave={() => { setHoveredIndex(null); setIsDragging(false); }}
-                onKeyDown={(e) => {
-                  // Keyboard controls for accessibility
-                  if (e.key === '+' || e.key === '=') {
-                    e.preventDefault();
-                    setZoom(Math.min(3, zoom * 1.2));
-                  } else if (e.key === '-' || e.key === '_') {
-                    e.preventDefault();
-                    setZoom(Math.max(0.5, zoom / 1.2));
-                  } else if (e.key === '0') {
-                    e.preventDefault();
-                    resetView();
-                  } else if (e.key === 'ArrowUp') {
-                    e.preventDefault();
-                    setPanY(panY + 30);
-                  } else if (e.key === 'ArrowDown') {
-                    e.preventDefault();
-                    setPanY(panY - 30);
-                  } else if (e.key === 'ArrowLeft') {
-                    e.preventDefault();
-                    setPanX(panX + 30);
-                  } else if (e.key === 'ArrowRight') {
-                    e.preventDefault();
-                    setPanX(panX - 30);
-                  }
-                }}
-                style={{ cursor: isDragging ? 'grabbing' : (hoveredIndex !== null ? 'pointer' : 'grab') }}
-              >
+            <CardContent
+              ref={containerRef}
+              className="p-0 bg-slate-900 relative min-h-[500px] flex items-center justify-center overflow-auto"
+              role="img"
+              aria-label={`HVAC blueprint visualization with ${segments.length} detected components. Use +/- to zoom, arrow keys to pan.`}
+              tabIndex={0}
+              onWheel={handleWheel}
+              onKeyDown={(e) => {
+                // Keyboard controls for accessibility
+                if (e.key === '+' || e.key === '=') {
+                  e.preventDefault();
+                  setZoom(Math.min(3, zoom * 1.2));
+                } else if (e.key === '-' || e.key === '_') {
+                  e.preventDefault();
+                  setZoom(Math.max(0.5, zoom / 1.2));
+                } else if (e.key === '0') {
+                  e.preventDefault();
+                  resetView();
+                } else if (e.key === 'ArrowUp') {
+                  e.preventDefault();
+                  setPanY(panY + 30);
+                } else if (e.key === 'ArrowDown') {
+                  e.preventDefault();
+                  setPanY(panY - 30);
+                } else if (e.key === 'ArrowLeft') {
+                  e.preventDefault();
+                  setPanX(panX + 30);
+                } else if (e.key === 'ArrowRight') {
+                  e.preventDefault();
+                  setPanX(panX - 30);
+                }
+              }}
+            >
+              <div className="relative w-full flex items-center justify-center">
                 <canvas
                   ref={bgCanvasRef}
                   className="max-w-full h-auto shadow-2xl block"
@@ -654,10 +660,13 @@ export default function InferenceAnalysis({ initialImage, initialSegments, initi
                 <canvas
                   ref={overlayCanvasRef}
                   onMouseMove={handleMouseMove}
+                  onMouseDown={handleMouseDown}
+                  onMouseUp={handleMouseUp}
+                  onMouseLeave={() => { setHoveredIndex(null); setIsDragging(false); }}
                   className="absolute top-0 left-0 max-w-full h-auto"
                   aria-label={`${segments.length} component overlays`}
                   role="presentation"
-                  style={{ pointerEvents: 'none' }}
+                  style={{ pointerEvents: 'auto', touchAction: 'none' }}
                 />
               </div>
               {/* Hover Tooltip Overlay */}

@@ -60,6 +60,11 @@ const InferenceAnalysis = dynamic(() => import('@/components/inference/Inference
   loading: () => <div className="h-64 w-full bg-slate-50 animate-pulse rounded-lg flex items-center justify-center text-slate-400">Loading Visualization Engine...</div>
 });
 
+const QuoteDashboard = dynamic(() => import('@/components/hvac/QuoteDashboard'), {
+  ssr: false,
+  loading: () => <div className="h-64 w-full bg-slate-50 animate-pulse rounded-lg flex items-center justify-center text-slate-400">Loading Quote Dashboard...</div>
+});
+
 export default function HVACBlueprintUploader({ onAnalysisComplete }: HVACBlueprintUploaderProps) {
   const router = useRouter();
   
@@ -69,6 +74,7 @@ export default function HVACBlueprintUploader({ onAnalysisComplete }: HVACBluepr
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<AnalysisResult | null>(null);
+  const [showQuoteDashboard, setShowQuoteDashboard] = useState(false);
   
   const [projectId, setProjectId] = useState('');
   const [location, setLocation] = useState('');
@@ -504,7 +510,7 @@ export default function HVACBlueprintUploader({ onAnalysisComplete }: HVACBluepr
         </CardContent>
       </Card>
 
-      {result && (
+      {result && !showQuoteDashboard && (
         <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
           <Card className="overflow-hidden border-2 shadow-xl">
             <CardHeader className="bg-slate-50 border-b">
@@ -514,8 +520,8 @@ export default function HVACBlueprintUploader({ onAnalysisComplete }: HVACBluepr
                   <CardDescription>ID: {result.analysis_id}</CardDescription>
                 </div>
                 <div className="flex gap-2">
-                   <Button variant="outline" onClick={() => router.push(`/analysis/${result.analysis_id}`)}>
-                     <DollarSign className="mr-2 h-4 w-4" />
+                   <Button onClick={() => setShowQuoteDashboard(true)} className="gap-2">
+                     <DollarSign className="h-4 w-4" />
                      Generate Quote
                    </Button>
                 </div>
@@ -567,6 +573,18 @@ export default function HVACBlueprintUploader({ onAnalysisComplete }: HVACBluepr
               </div>
             </CardContent>
           </Card>
+        </div>
+      )}
+      
+      {/* Quote Dashboard - Full Screen */}
+      {result && showQuoteDashboard && (
+        <div className="fixed inset-0 z-50 bg-white">
+          <QuoteDashboard
+            projectId={projectId || result.analysis_id || 'HVAC-PROJ-001'}
+            location={location || 'Atlanta, GA'}
+            analysisResult={result}
+            imageFile={uploadedFile?.file ?? null}
+          />
         </div>
       )}
     </div>

@@ -74,11 +74,11 @@ def start_ray_serve():
     os.environ['YOLO_MODEL_PATH'] = model_path
     os.environ['CONF_THRESHOLD'] = conf_threshold
     
-    # Change to python-services directory for proper imports
-    python_services_dir = repo_root / 'python-services'
+    # Change to services/hvac-analysis directory for proper imports
+    python_services_dir = repo_root / 'services' / 'hvac-analysis'
     os.chdir(python_services_dir)
-    
-    # Add python-services to Python path
+
+    # Add services/hvac-analysis to Python path
     if str(python_services_dir) not in sys.path:
         sys.path.insert(0, str(python_services_dir))
     

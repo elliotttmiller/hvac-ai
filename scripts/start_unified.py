@@ -24,7 +24,7 @@ from pathlib import Path
 # Configuration
 SCRIPT_DIR = Path(__file__).parent
 REPO_ROOT = SCRIPT_DIR.parent
-PYTHON_SERVICES = REPO_ROOT / "python-services"
+PYTHON_SERVICES = REPO_ROOT / "services" / "hvac-analysis"
 BACKEND_SCRIPT = SCRIPT_DIR / "backend_start.py"
 RAY_SERVE_SCRIPT = SCRIPT_DIR / "start_ray_serve.py"
 FRONTEND_CMD = "npm run dev"

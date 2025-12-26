@@ -10,9 +10,9 @@ import sys
 import os
 from pathlib import Path
 
-# Add python-services to path
+# Add services/hvac-analysis to path
 REPO_ROOT = Path(__file__).parent.parent
-PYTHON_SERVICES = REPO_ROOT / "python-services"
+PYTHON_SERVICES = REPO_ROOT / "services" / "hvac-analysis"
 sys.path.insert(0, str(PYTHON_SERVICES))
 
 import numpy as np

@@ -36,7 +36,7 @@ An enterprise-grade platform combining Next.js frontend with Python AI services 
 ```bash
 # 1. Install dependencies
 npm install
-cd python-services && pip install -r requirements.txt && cd ..
+cd services/hvac-analysis && pip install -r requirements.txt && cd ..
 
 # 2. Configure environment
 cp .env.example .env.local
@@ -51,7 +51,7 @@ python scripts/start_unified.py --mode ray-serve
 ```bash
 # 1. Install dependencies
 npm install
-cd python-services && pip install -r requirements.txt && cd ..
+cd services/hvac-analysis && pip install -r requirements.txt && cd ..
 
 # 2. Configure environment
 cp .env.example .env
@@ -59,7 +59,7 @@ cp .env.example .env
 
 # 3. Run development servers
 npm run dev                      # Frontend (port 3000)
-cd python-services && python hvac_analysis_service.py  # Backend (port 8000)
+cd services/hvac-analysis && python hvac_analysis_service.py  # Backend (port 8000)
 ```
 
 ### New Architecture: HVAC Cortex
@@ -125,7 +125,7 @@ hvac-ai/
 │   ├── hvac-domain/      # System validation & relationships
 │   ├── hvac-document/    # Document processing & enhancement
 │   └── gateway/          # API gateway (future)
-├── python-services/        # Backend (FastAPI/Python)
+├── services/hvac-analysis/        # Backend (FastAPI/Python)
 │   ├── core/              # Core business logic
 │   │   ├── ai/           # AI models and inference
 │   │   ├── vlm/          # 🆕 Vision-Language Model system

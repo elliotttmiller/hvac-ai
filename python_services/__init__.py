@@ -14,7 +14,7 @@ import os
 # Compute path to the real `python-services` directory (sibling of this shim)
 _HERE = os.path.dirname(__file__)
 _ROOT = os.path.abspath(os.path.join(_HERE, '..'))
-_ALT = os.path.join(_ROOT, 'python-services')
+_ALT = os.path.join(_ROOT, 'services', 'hvac-analysis')
 
 if os.path.isdir(_ALT):
     # Allow subpackages (e.g., python_services.core) to be resolved from

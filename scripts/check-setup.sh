@@ -69,10 +69,10 @@ echo ""
 
 # 4. Check Python dependencies
 echo "4. Checking Python dependencies..."
-if [ -d "python-services/venv" ]; then
+if [ -d "services/hvac-analysis/venv" ]; then
     print_status "OK" "Python virtual environment exists"
 else
-    print_status "WARN" "Python venv not found. Run: cd python-services && python3 -m venv venv"
+    print_status "WARN" "Python venv not found. Run: cd services/hvac-analysis && python3 -m venv venv"
 fi
 echo ""
 
@@ -124,19 +124,19 @@ echo ""
 
 # 6. Check backend structure
 echo "6. Checking backend structure..."
-if [ -f "python-services/hvac_analysis_service.py" ]; then
+if [ -f "services/hvac-analysis/hvac_analysis_service.py" ]; then
     print_status "OK" "Backend service file exists"
 else
     print_status "ERROR" "Backend service file not found"
 fi
 
-if [ -f "python-services/requirements.txt" ]; then
+if [ -f "services/hvac-analysis/requirements.txt" ]; then
     print_status "OK" "Requirements file exists"
 else
     print_status "ERROR" "Requirements file not found"
 fi
 
-if [ -f "python-services/core/ai/yolo_inference.py" ] || [ -f "python-services/core/ai/sam_inference.py" ]; then
+if [ -f "services/hvac-analysis/core/ai/yolo_inference.py" ] || [ -f "services/hvac-analysis/core/ai/sam_inference.py" ]; then
     print_status "OK" "Inference module exists"
 else
     print_status "ERROR" "Inference module not found"
@@ -180,7 +180,7 @@ echo ""
 if [ $errors -eq 0 ] && [ $warnings -eq 0 ]; then
     echo -e "${GREEN}✓ All checks passed!${NC}"
     echo "Your setup looks good. You can start the services:"
-    echo "  Terminal 1: cd python-services && python hvac_analysis_service.py"
+    echo "  Terminal 1: cd services/hvac-analysis && python hvac_analysis_service.py"
     echo "  Terminal 2: npm run dev"
 elif [ $errors -eq 0 ]; then
     echo -e "${YELLOW}⚠ Setup complete with $warnings warning(s)${NC}"

@@ -49,17 +49,17 @@ Following DDD principles, we use universal, tool-agnostic naming:
 
 - **`ObjectDetector`** - Generic object detection (currently YOLOv11)
   - Easy to swap YOLO for EfficientDet, DETR, etc.
-  - Location: `python-services/core/services/object_detector.py`
+  - Location: `services/hvac-analysis/core/services/object_detector.py`
 
 - **`TextExtractor`** - Generic text recognition (currently PaddleOCR)
   - Easy to swap PaddleOCR for EasyOCR, Tesseract, or GPT-4V
-  - Location: `python-services/core/services/text_extractor.py`
+  - Location: `services/hvac-analysis/core/services/text_extractor.py`
 
 - **`GeometryUtils`** - Geometric transformations
   - OBB corner calculation
   - Perspective transformation to rectify rotated crops
   - OCR preprocessing (grayscale, thresholding)
-  - Location: `python-services/core/utils/geometry.py`
+  - Location: `services/hvac-analysis/core/utils/geometry.py`
 
 ### 2. Ray Serve Deployments
 
@@ -81,7 +81,7 @@ The pipeline implements selective inference:
 
 ```bash
 # Python dependencies
-cd python-services
+cd services/hvac-analysis
 pip install -r requirements.txt
 
 # This includes:

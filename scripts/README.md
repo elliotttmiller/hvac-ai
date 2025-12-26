@@ -45,14 +45,14 @@ chmod +x scripts/*.sh
 ./scripts/dev.sh
 ```
 
-### Daily Development
+# Daily Development
 ```bash
 # Start both servers
 ./scripts/dev.sh
 
 # Or start them separately:
 npm run dev                      # Frontend only
-cd python-services && python hvac_analysis_service.py  # Backend only
+cd services/hvac-analysis && python hvac_analysis_service.py  # Backend only
 ```
 
 ## Adding New Scripts

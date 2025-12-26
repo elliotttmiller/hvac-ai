@@ -13,7 +13,7 @@ fi
 # Start backend in background
 echo ""
 echo "🐍 Starting Python backend service..."
-cd python-services
+cd services/hvac-analysis
 
 if [ -d "venv" ]; then
     source venv/bin/activate

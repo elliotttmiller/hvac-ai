@@ -9,21 +9,21 @@ This document confirms the complete implementation of all tasks specified in `pr
 ## ✅ Track A: Backend Infrastructure (Ray Serve)
 
 ### Task 1.1: Inference Graph Orchestration ✅
-**File:** `python-services/core/inference_graph.py`
+**File:** `services/hvac-analysis/core/inference_graph.py`
 - ✅ Defined Ray Serve deployment graph
 - ✅ Implemented fractional GPU allocation (40% + 30%)
 - ✅ Ensured async ingress node for non-blocking requests
 - **Lines:** 389 total, fully implemented
 
 ### Task 1.2: ObjectDetector Service ✅
-**File:** `python-services/core/services/object_detector.py`
+**File:** `services/hvac-analysis/core/services/object_detector.py`
 - ✅ Wrapped YOLOv11 logic with universal naming
 - ✅ Loads model once during `__init__`
 - ✅ Returns raw OBB data (center, width, height, rotation)
 - **Lines:** 239 total, fully implemented
 
 ### Task 1.3: TextExtractor Service ✅
-**File:** `python-services/core/services/text_extractor.py`
+**File:** `services/hvac-analysis/core/services/text_extractor.py`
 - ✅ Wrapped PaddleOCR logic with universal naming
 - ✅ Initialized with `use_angle_cls=False`
 - ✅ Supports batch processing (accepts list of crops)
@@ -34,7 +34,7 @@ This document confirms the complete implementation of all tasks specified in `pr
 ## ✅ Track B: The Intelligence Logic
 
 ### Task 2.1: GeometryUtils Module ✅
-**File:** `python-services/core/utils/geometry.py`
+**File:** `services/hvac-analysis/core/utils/geometry.py`
 - ✅ Accepts OBB parameters (x, y, w, h, rotation) + Original Image
 - ✅ Calculates 4 corner points from OBB
 - ✅ Warps/rotates crop to be perfectly horizontal (0 degrees)
@@ -48,7 +48,7 @@ This document confirms the complete implementation of all tasks specified in `pr
 - `extract_and_preprocess_obb()` - Complete pipeline
 
 ### Task 2.2: Selective Inference Logic ✅
-**File:** `python-services/core/inference_graph.py` (lines 272-280)
+**File:** `services/hvac-analysis/core/inference_graph.py` (lines 272-280)
 - ✅ Defined `TEXT_RICH_CLASSES = {'id_letters', 'tag_number', 'text_label', 'label', 'text', 'tag'}`
 - ✅ Implemented filtering in Fusion Layer
 - ✅ Only triggers TextExtractor for matching classes
@@ -116,7 +116,7 @@ python scripts/start_unified.py --mode legacy
 
 ## 📦 Dependencies Added
 
-**File:** `python-services/requirements.txt`
+**File:** `services/hvac-analysis/requirements.txt`
 
 ```python
 # Ray Serve
@@ -197,8 +197,8 @@ paddleocr>=2.7.0
 | Tests Created | 3 test functions |
 
 ### Files Created
-1. `python-services/core/inference_graph.py`
-2. `python-services/core/services/__init__.py`
+1. `services/hvac-analysis/core/inference_graph.py`
+2. `services/hvac-analysis/core/services/__init__.py`
 3. `python-services/core/services/object_detector.py`
 4. `python-services/core/services/text_extractor.py`
 5. `python-services/core/utils/__init__.py`

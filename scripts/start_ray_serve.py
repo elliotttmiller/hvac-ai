@@ -3,8 +3,11 @@ Start Script for Ray Serve (HVAC AI)
 Launches the distributed inference graph using the Application Builder pattern.
 """
 
-import sys
+# Set global environment variables before any imports
 import os
+os.environ['DISABLE_MODEL_SOURCE_CHECK'] = 'True'  # Bypass PaddleOCR connectivity checks globally
+
+import sys
 import logging
 from pathlib import Path
 import time
@@ -75,7 +78,18 @@ def main():
             # Best-effort; don't fail startup if loggers aren't present
             pass
         
-        ray.init(num_gpus=1 if USE_GPU else 0, ignore_reinit_error=True)
+        # Set environment variables for Ray workers before initialization
+        os.environ['DISABLE_MODEL_SOURCE_CHECK'] = 'True'  # Bypass PaddleOCR connectivity checks
+        
+        ray.init(
+            num_gpus=1 if USE_GPU else 0, 
+            ignore_reinit_error=True,
+            runtime_env={
+                "env_vars": {
+                    "DISABLE_MODEL_SOURCE_CHECK": "True"
+                }
+            }
+        )
         
     except ImportError:
         logger.error("❌ Ray not installed. Run: pip install 'ray[serve]'")

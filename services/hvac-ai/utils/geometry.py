@@ -3,15 +3,15 @@ GeometryUtils Module - Perspective Transform Pipeline
 Universal geometry utilities for oriented bounding box (OBB) manipulation.
 
 Handles:
-- OBB corner calculation
+- OBB corner calculation with robust sorting
 - Perspective transformation to rectify rotated crops
-- Image preprocessing for OCR (grayscale, thresholding)
+- Advanced image preprocessing for OCR (adaptive thresholding, inversion, denoising)
 """
 
 import cv2
 import numpy as np
 import logging
-from typing import Dict, Tuple, Optional, List
+from typing import Dict, Tuple, Optional, List, Union
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
@@ -34,6 +34,15 @@ class GeometryUtils:
     """
     
     @staticmethod
+    def get_polygon_points(obb: OBB) -> List[List[float]]:
+        """
+        Calculate the 4 corner points of an oriented bounding box.
+        Used for visualization on the frontend.
+        """
+        corners = GeometryUtils.calculate_corners(obb)
+        return corners.tolist()
+
+    @staticmethod
     def calculate_corners(obb: OBB) -> np.ndarray:
         """
         Calculate the 4 corner points of an oriented bounding box.
@@ -42,41 +51,38 @@ class GeometryUtils:
             obb: Oriented bounding box with center, dimensions, and rotation
             
         Returns:
-            Array of shape (4, 2) containing corner coordinates in order:
-            [top-left, top-right, bottom-right, bottom-left]
+            Array of shape (4, 2) containing corner coordinates.
         """
-        cx, cy = obb.x_center, obb.y_center
-        w, h = obb.width, obb.height
-        angle = obb.rotation
-        
-        # Calculate half dimensions
-        half_w = w / 2.0
-        half_h = h / 2.0
-        
-        # Calculate corners in local coordinate system (before rotation)
-        corners_local = np.array([
-            [-half_w, -half_h],  # top-left
-            [half_w, -half_h],   # top-right
-            [half_w, half_h],    # bottom-right
-            [-half_w, half_h]    # bottom-left
-        ])
-        
-        # Rotation matrix
-        cos_a = np.cos(angle)
-        sin_a = np.sin(angle)
-        rotation_matrix = np.array([
-            [cos_a, -sin_a],
-            [sin_a, cos_a]
-        ])
-        
-        # Rotate corners
-        corners_rotated = corners_local @ rotation_matrix.T
-        
-        # Translate to world coordinates
-        corners_world = corners_rotated + np.array([cx, cy])
-        
-        return corners_world
+        # OpenCV's boxPoints is robust and handles rotation logic internally
+        # We convert our OBB format (radians) to OpenCV format (degrees)
+        # rect format: ((center_x, center_y), (width, height), angle_degrees)
+        rect = ((obb.x_center, obb.y_center), (obb.width, obb.height), np.degrees(obb.rotation))
+        box = cv2.boxPoints(rect)
+        return box.astype(np.int32)
     
+    @staticmethod
+    def order_points(pts: np.ndarray) -> np.ndarray:
+        """
+        Sorts coordinates to a consistent order:
+        [top-left, top-right, bottom-right, bottom-left]
+        
+        This is critical for perspective transforms to ensure the image
+        doesn't get flipped or mirrored during rectification.
+        """
+        rect = np.zeros((4, 2), dtype="float32")
+        
+        # Top-left will have the smallest sum, Bottom-right will have the largest sum
+        s = pts.sum(axis=1)
+        rect[0] = pts[np.argmin(s)]
+        rect[2] = pts[np.argmax(s)]
+        
+        # Top-right will have the smallest difference, Bottom-left will have the largest difference
+        diff = np.diff(pts, axis=1)
+        rect[1] = pts[np.argmin(diff)]
+        rect[3] = pts[np.argmax(diff)]
+        
+        return rect
+
     @staticmethod
     def rectify_obb_region(
         image: np.ndarray,
@@ -97,27 +103,33 @@ class GeometryUtils:
             - metadata_dict: Information about the transformation
         """
         try:
-            # Calculate corner points
-            corners = GeometryUtils.calculate_corners(obb)
+            # 1. Get raw corners
+            raw_corners = GeometryUtils.calculate_corners(obb)
             
-            # Ensure corners are within image bounds
-            h, w = image.shape[:2]
-            corners[:, 0] = np.clip(corners[:, 0], 0, w - 1)
-            corners[:, 1] = np.clip(corners[:, 1], 0, h - 1)
+            # 2. Sort corners consistently (TL, TR, BR, BL)
+            src_points = GeometryUtils.order_points(raw_corners.astype(np.float32))
             
-            # Source points (corners in original image)
-            src_points = corners.astype(np.float32)
+            # 3. Determine width/height of the new straight image
+            (tl, tr, br, bl) = src_points
             
-            # Destination points (rectified rectangle)
-            # Width and height of the rectified crop
-            dst_w = int(obb.width) + 2 * padding
-            dst_h = int(obb.height) + 2 * padding
+            widthA = np.sqrt(((br[0] - bl[0]) ** 2) + ((br[1] - bl[1]) ** 2))
+            widthB = np.sqrt(((tr[0] - tl[0]) ** 2) + ((tr[1] - tl[1]) ** 2))
+            maxWidth = max(int(widthA), int(widthB))
+
+            heightA = np.sqrt(((tr[0] - br[0]) ** 2) + ((tr[1] - br[1]) ** 2))
+            heightB = np.sqrt(((tl[0] - bl[0]) ** 2) + ((tl[1] - bl[1]) ** 2))
+            maxHeight = max(int(heightA), int(heightB))
             
+            # Add padding to dimensions
+            dst_w = maxWidth + 2 * padding
+            dst_h = maxHeight + 2 * padding
+            
+            # Destination points (rectified rectangle with padding)
             dst_points = np.array([
                 [0, 0],
-                [dst_w, 0],
-                [dst_w, dst_h],
-                [0, dst_h]
+                [dst_w - 1, 0],
+                [dst_w - 1, dst_h - 1],
+                [0, dst_h - 1]
             ], dtype=np.float32)
             
             # Compute perspective transform matrix
@@ -128,67 +140,71 @@ class GeometryUtils:
                 image, M, (dst_w, dst_h),
                 flags=cv2.INTER_LINEAR,
                 borderMode=cv2.BORDER_CONSTANT,
-                borderValue=(255, 255, 255)
+                borderValue=(255, 255, 255) # Pad with white
             )
             
             metadata = {
                 'original_rotation': obb.rotation,
                 'rectified_size': (dst_w, dst_h),
-                'corners': corners.tolist(),
-                'transform_matrix': M.tolist()
+                'corners': raw_corners.tolist(),
             }
             
             return rectified, metadata
             
         except Exception as e:
             logger.error(f"Failed to rectify OBB region: {e}", exc_info=True)
-            # Return a fallback empty image
-            fallback = np.ones((int(obb.height), int(obb.width), 3), dtype=np.uint8) * 255
+            # Return a fallback empty image to prevent pipeline crash
+            fallback = np.ones((int(obb.height or 10), int(obb.width or 10), 3), dtype=np.uint8) * 255
             return fallback, {'error': str(e)}
     
     @staticmethod
     def preprocess_for_ocr(
         image: np.ndarray,
-        apply_threshold: bool = True,
+        apply_threshold: bool = True, # Default to True for blueprints
         denoise: bool = False
     ) -> np.ndarray:
         """
-        Preprocess an image for OCR by enhancing contrast and text clarity.
-        
-        Args:
-            image: Input image (can be color or grayscale)
-            apply_threshold: Whether to apply adaptive thresholding
-            denoise: Whether to apply denoising
-            
-        Returns:
-            Preprocessed image optimized for OCR
+        Advanced preprocessing for OCR on engineering drawings.
+        Handles grid lines, low contrast, and inverted text.
         """
         try:
-            # Convert to grayscale if needed
+            # 1. Convert to grayscale
             if len(image.shape) == 3:
                 gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
             else:
                 gray = image.copy()
             
-            # Denoise if requested
-            if denoise:
-                gray = cv2.fastNlMeansDenoising(gray, h=10)
-            
-            # Apply adaptive thresholding for better text contrast
+            processed = gray
+
+            # 2. Adaptive Thresholding (The "Blueprint Cleaner")
+            # This is crucial for removing grid lines and handling uneven lighting.
+            # It converts the image to pure black and white based on local neighborhoods.
             if apply_threshold:
-                # Use adaptive threshold to handle varying lighting
                 processed = cv2.adaptiveThreshold(
                     gray,
                     255,
                     cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
                     cv2.THRESH_BINARY,
-                    11,  # block size
-                    2    # constant subtracted from mean
+                    11,  # Block size (neighborhood size)
+                    2    # Constant subtracted from mean
                 )
-            else:
-                processed = gray
+
+            # 3. Denoising (Optional)
+            if denoise:
+                processed = cv2.fastNlMeansDenoising(processed, h=10)
             
-            return processed
+            # 4. Inversion Check
+            # OCR engines expect dark text on light background.
+            # If the image is mostly black (white text), invert it.
+            mean_brightness = cv2.mean(processed)[0]
+            if mean_brightness < 127:
+                processed = cv2.bitwise_not(processed)
+
+            # 5. Convert back to BGR
+            # PaddleOCR expects 3-channel input even for grayscale images
+            final_image = cv2.cvtColor(processed, cv2.COLOR_GRAY2BGR)
+            
+            return final_image
             
         except Exception as e:
             logger.error(f"Failed to preprocess image for OCR: {e}", exc_info=True)
@@ -203,20 +219,11 @@ class GeometryUtils:
     ) -> Tuple[np.ndarray, Dict]:
         """
         Complete pipeline: extract OBB region, rectify, and preprocess for OCR.
-        
-        Args:
-            image: Source image
-            obb: Oriented bounding box
-            padding: Padding around extracted region
-            preprocess: Whether to apply OCR preprocessing
-            
-        Returns:
-            Tuple of (processed_crop, metadata)
         """
-        # Rectify the region
+        # 1. Rectify (Straighten)
         rectified, metadata = GeometryUtils.rectify_obb_region(image, obb, padding)
         
-        # Preprocess for OCR if requested
+        # 2. Preprocess (Clean)
         if preprocess and 'error' not in metadata:
             processed = GeometryUtils.preprocess_for_ocr(rectified)
             metadata['preprocessed'] = True
@@ -230,12 +237,6 @@ class GeometryUtils:
     def obb_from_dict(obb_dict: Dict) -> OBB:
         """
         Convert a dictionary representation to an OBB object.
-        
-        Args:
-            obb_dict: Dictionary with keys: x_center, y_center, width, height, rotation
-            
-        Returns:
-            OBB object
         """
         return OBB(
             x_center=float(obb_dict['x_center']),
@@ -249,24 +250,18 @@ class GeometryUtils:
     def validate_obb(obb: OBB, image_shape: Tuple[int, int]) -> bool:
         """
         Validate that an OBB is reasonable for the given image.
-        
-        Args:
-            obb: Oriented bounding box to validate
-            image_shape: Image shape (height, width)
-            
-        Returns:
-            True if OBB is valid, False otherwise
         """
-        h, w = image_shape
+        h, w = image_shape[:2]
         
-        # Check if center is within image bounds (strict inequalities for upper bounds)
+        # Basic bounds check
         if not (0 <= obb.x_center < w and 0 <= obb.y_center < h):
             return False
         
-        # Check if dimensions are positive and reasonable
+        # Dimension check
         if obb.width <= 0 or obb.height <= 0:
             return False
         
+        # Sanity check (prevent massive false positives larger than image)
         if obb.width > w * 2 or obb.height > h * 2:
             return False
         

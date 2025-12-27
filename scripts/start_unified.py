@@ -3,14 +3,22 @@ Unified Start Script - HVAC AI Platform
 Launches the Ray Serve backend and Next.js frontend in parallel.
 """
 
-import subprocess
+# Set global environment variables before any imports
 import os
+os.environ['DISABLE_MODEL_SOURCE_CHECK'] = 'True'  # Bypass PaddleOCR connectivity checks globally
+
+import subprocess
 import sys
 import time
 import threading
 from datetime import datetime
 import argparse
 from pathlib import Path
+import urllib.request
+import urllib.error
+import json
+import itertools
+import shutil
 
 # --- Configuration ---
 SCRIPT_DIR = Path(__file__).parent
@@ -89,20 +97,93 @@ def start_and_stream(command_args, name, color_code, env, cwd):
     thread.start()
     return proc
 
-def wait_for_backend_health(url: str, timeout: float = 120.0) -> bool:
-    """Polls a URL until it returns a 200 OK."""
-    import urllib.request
-    
+def wait_for_backend_health(url: str, timeout: float = 300.0) -> bool:
+    """Polls a URL until it returns a 200 OK with status 'healthy' and all deployments ready.
+    Shows a real-time progress bar with status updates.
+    """
     deadline = time.time() + timeout
+    start_time = time.time()
+    
+    # Progress bar characters
+    spinner = itertools.cycle(['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'])
+    bar_width = min(40, shutil.get_terminal_size().columns - 50)  # Responsive width
+    
+    print(f"[{_ts()}] [STARTUP] 🚀 Starting backend initialization...")
+    print(f"[{_ts()}] [STARTUP] 📡 Monitoring health at {url}")
+    
+    last_status = ""
+    last_deployments = {}
+    
     while time.time() < deadline:
+        elapsed = time.time() - start_time
+        progress = min(elapsed / timeout, 1.0)
+        
+        # Create progress bar
+        filled = int(bar_width * progress)
+        bar = "█" * filled + "░" * (bar_width - filled)
+        
+        # Spinner
+        spin = next(spinner)
+        
+        # Time display
+        elapsed_str = f"{int(elapsed)}s"
+        
         try:
-            with urllib.request.urlopen(url, timeout=2) as resp:
+            with urllib.request.urlopen(url, timeout=10) as resp:
                 if resp.status == 200:
-                    print(f"[{_ts()}] [STARTUP] ✅ Backend health check passed.")
-                    return True
-        except Exception:
-            pass
-        time.sleep(2.0)
+                    try:
+                        data = json.loads(resp.read().decode('utf-8'))
+                        status = data.get('status', 'unknown')
+                        deployments = data.get('deployments', {})
+                        
+                        # Check if status changed
+                        status_changed = (status != last_status or deployments != last_deployments)
+                        last_status = status
+                        last_deployments = deployments
+                        
+                        if status == 'healthy':
+                            # Check that all deployments are ready
+                            all_ready = all(
+                                dep_status == 'ready'
+                                for dep_status in deployments.values()
+                            )
+                            if all_ready:
+                                # Clear the progress line and show success
+                                print(f"\r\033[K[{_ts()}] [STARTUP] ✅ Backend fully ready - all deployments initialized in {elapsed_str}")
+                                print()
+                                return True
+                            else:
+                                # Show deployment status
+                                ready_count = sum(1 for s in deployments.values() if s == 'ready')
+                                total_count = len(deployments)
+                                status_msg = f"Deployments: {ready_count}/{total_count} ready"
+                        elif status == 'initializing':
+                            status_msg = f"Backend initializing..."
+                        else:
+                            status_msg = f"Status: {status}"
+                            
+                        # Show progress if status changed or first time
+                        if status_changed or elapsed % 1 < 0.1:  # Update every ~1 second
+                            print(f"\r{spin} [{bar}] {elapsed_str} | {status_msg}", end="", flush=True)
+                            
+                    except json.JSONDecodeError:
+                        status_msg = "Invalid health response"
+                        print(f"\r{spin} [{bar}] {elapsed_str} | {status_msg}", end="", flush=True)
+                else:
+                    status_msg = f"HTTP {resp.status}"
+                    print(f"\r{spin} [{bar}] {elapsed_str} | {status_msg}", end="", flush=True)
+                    
+        except urllib.error.URLError:
+            status_msg = "Connecting..."
+            print(f"\r{spin} [{bar}] {elapsed_str} | {status_msg}", end="", flush=True)
+        except Exception as e:
+            status_msg = f"Error: {str(e)[:20]}..."
+            print(f"\r{spin} [{bar}] {elapsed_str} | {status_msg}", end="", flush=True)
+
+        time.sleep(0.5)  # Update twice per second for smooth animation
+    
+    # Timeout reached
+    print(f"\r\033[K[{_ts()}] [STARTUP] ❌ Backend initialization timed out after {int(elapsed)}s")
     return False
 
 def main():
@@ -124,8 +205,8 @@ def main():
     health_url = f"http://127.0.0.1:{BACKEND_PORT}/health"
     print(f"[INFO] Waiting for backend at {health_url}...")
     
-    if not wait_for_backend_health(health_url):
-        print("[ERROR] Backend failed to start. Terminating.")
+    if not wait_for_backend_health(health_url, timeout=600.0):  # 10 minutes timeout
+        print("[ERROR] Backend failed to fully initialize. Terminating.")
         backend_proc.terminate()
         sys.exit(1)
     

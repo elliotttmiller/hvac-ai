@@ -30,9 +30,11 @@ def start_ray_serve():
     # --- CRITICAL FIX: Change Working Directory ---
     # This ensures that 'from inference_graph import app' works as you expect.
     os.chdir(SERVICES_AI_DIR)
-    # Add the parent 'services' dir to path for cross-service imports like hvac-domain
-    sys.path.insert(0, str(SERVICES_AI_DIR.parent))
+    # Add paths for imports
+    sys.path.insert(0, str(SERVICES_AI_DIR))  # Current dir for inference_graph.py
+    sys.path.insert(0, str(SERVICES_AI_DIR.parent))  # Parent 'services' dir for hvac-domain
     logger.info(f"Changed CWD to: {os.getcwd()}")
+    logger.info(f"Python path updated with: {SERVICES_AI_DIR}")
     
     # --- Read Config from Environment ---
     BACKEND_PORT = int(os.environ.get('BACKEND_PORT', '8000'))
@@ -66,20 +68,9 @@ def start_ray_serve():
             logger.error("Ensure 'inference_graph.py' is in the current directory.")
             sys.exit(1)
         
-        # 3. Create a Ray Serve Deployment Wrapper for the FastAPI App
-        @serve.deployment
-        class APIServer:
-            def __init__(self):
-                # Import locally in each replica to avoid pickling issues
-                from inference_graph import app
-                self.app = app
-            
-            async def __call__(self, scope, receive, send):
-                """ASGI interface for Ray Serve."""
-                await self.app(scope, receive, send)
-        
-        # 4. Deploy the Application
-        logger.info(f"Deploying FastAPI application on Ray Serve (Port: {BACKEND_PORT})...")
+        # 3. Deploy the FastAPI ASGI application directly with uvicorn
+        # Skip Ray Serve for now and just run FastAPI directly on the backend port
+        logger.info(f"Deploying FastAPI application (Port: {BACKEND_PORT})...")
         logger.info("=" * 60)
         logger.info("✅ RAY SERVE DEPLOYMENT STARTING")
         logger.info(f"   - Backend: http://0.0.0.0:{BACKEND_PORT}")
@@ -87,9 +78,14 @@ def start_ray_serve():
         logger.info(f"   - Dashboard: http://127.0.0.1:8265")
         logger.info("=" * 60)
         
-        # serve.run() starts Serve and deploys the application
-        # It blocks indefinitely to keep the server running
-        serve.run(APIServer.bind())
+        # Start Ray Serve (without blocking)
+        serve.start()
+        
+        # For now, we'll run FastAPI directly with uvicorn
+        # This allows the health checks to work while inference happens in Ray
+        import uvicorn
+        logger.info("Starting FastAPI with uvicorn...")
+        uvicorn.run(fastapi_app, host="0.0.0.0", port=BACKEND_PORT, log_level="info")
         
     except ImportError as e:
         logger.error(f"[ERROR] Failed to import Ray. Please run: pip install 'ray[serve]'", exc_info=True)

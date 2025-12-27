@@ -1,6 +1,7 @@
 {
   "extraPaths": [
     "./services/hvac-ai",
+    "./services/hvac-domain",
     "."
   ],
   "typeCheckingMode": "basic"

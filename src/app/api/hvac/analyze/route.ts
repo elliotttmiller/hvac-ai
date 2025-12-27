@@ -63,10 +63,7 @@ export async function POST(request: NextRequest) {
 
     if (returnTopK) pythonFormData.append('return_top_k', returnTopK as string);
 
-    // The Python service in this repo exposes a single analyze endpoint
-    // at /api/hvac/analyze which accepts the same form fields (coords,
-    // prompt, grid_size) and supports streaming via ?stream=1. Use that
-    // endpoint for both streaming and non-streaming requests.
+    // FastAPI endpoint with explicit routing for /api/hvac/analyze
     targetUrl = `${PYTHON_SERVICE_URL}/api/hvac/analyze`;
     } else {
       // Count request — backend expects optional 'grid_size' form field
@@ -79,8 +76,7 @@ export async function POST(request: NextRequest) {
   // streaming body directly to the caller (preserving content-type).
   if (wantsStream) {
     try {
-      // Forward the streaming request to the backend analyze endpoint with
-      // the streaming query param which the backend understands.
+      // Forward the streaming request to the FastAPI endpoint
       const upstream = await fetch(
         `${PYTHON_SERVICE_URL}/api/hvac/analyze?stream=1`,
         {

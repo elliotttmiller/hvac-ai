@@ -1,91 +1,64 @@
 # =============================================================================
-# Core FastAPI dependencies
+# HVAC Cortex - Application Dependencies
+#
+# USAGE NOTES:
+# 1. GPU Support: For NVIDIA GPU support, install PyTorch and PaddlePaddle
+#    manually with the correct CUDA version before running this file.
+#    Example: pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+# 2. System Deps: 'rtree' requires libspatialindex, 'opencv' requires libGL.
 # =============================================================================
-fastapi
-uvicorn[standard]
-python-multipart
-pydantic
 
-# =============================================================================
-# AI/ML and Computer Vision (inference-focused)
-# Note: Torch and related CUDA wheels are best installed using the official PyTorch
-# index to pick the correct cuXYY wheel for the target machine. Do not rely on
-# generic pip resolution if you need a GPU-enabled build. Example:
-#   pip install --index-url https://download.pytorch.org/whl/cu121 \
-#       torch torchvision torchaudio
-# If you prefer CPU-only installs, install torch without the --index-url flag.
-# =============================================================================
+# --- Core Infrastructure & Deployment ---
+ray[serve]              # Distributed inference and model orchestration
+uvicorn[standard]       # ASGI server implementation
+fastapi                 # High-performance API framework
+python-multipart        # Multipart/form-data support for file uploads
+python-dotenv           # Environment variable management
+celery                  # Asynchronous task queue (optional/legacy)
+
+# --- Computer Vision & Deep Learning ---
+# Note: Pre-install torch with CUDA support for GPU acceleration.
 torch
 torchvision
-ultralytics  # YOLO object detection
-transformers
-diffusers
-accelerate
-bitsandbytes
-peft
-sentencepiece
-protobuf
+ultralytics             # YOLOv11 for Object Detection/OBB
+sahi                    # Slicing Aided Hyper Inference (Small object detection)
+transformers            # Hugging Face transformers (LLM/ViT support)
+diffusers               # Diffusion models
+accelerate              # PyTorch training/inference accelerator
+peft                    # Parameter-Efficient Fine-Tuning
+bitsandbytes            # Lightweight wrappers for CUDA custom functions
+sentencepiece           # Text tokenizer
 
-# SAHI - Slicing Aided Hyper Inference for HVAC component detection
-sahi
+# --- Optical Character Recognition (OCR) ---
+paddlepaddle            # Core DL framework for OCR (Use paddlepaddle-gpu for Prod)
+paddleocr               # Text detection and recognition engine
+pytesseract             # Tesseract OCR wrapper (Legacy fallback)
 
-# =============================================================================
-# Image Processing and Computer Vision
-# =============================================================================
-opencv-python
-numpy
-Pillow
-scikit-image
-matplotlib
-# Note: pycocotools and SAM removed - using YOLOv11 object detection only
+# --- Image & Geometry Processing ---
+opencv-python           # Core image processing library
+Pillow                  # Python Imaging Library (PIL)
+scikit-image            # Image processing algorithms
+matplotlib              # Plotting and visualization
+rtree                   # Spatial indexing for geometric queries (Requires libspatialindex)
+svgwrite                # SVG generation
 
-# =============================================================================
-# Document Processing
-# =============================================================================
-pypdf2
-pymupdf
-pdf2image
-ezdxf
-svgwrite
+# --- Document & Blueprint Processing ---
+pymupdf                 # High-performance PDF parsing/rendering (Fitz)
+pypdf                   # Pure Python PDF library (Modern replacement for PyPDF2)
+pdf2image               # Convert PDF to PIL images (Requires Poppler)
+ezdxf                   # DXF (CAD) file manipulation
 
-# =============================================================================
-# OCR (Optical Character Recognition)
-# =============================================================================
-pytesseract
-paddlepaddle
-paddleocr
+# --- Data Science & Math ---
+numpy                   # Fundamental array computing
+pandas                  # Data manipulation and analysis
+scipy                   # Scientific computing
+scikit-learn            # Machine learning utilities
+networkx                # Graph theory and network analysis
 
-# =============================================================================
-# Data Processing
-# =============================================================================
-pandas
-scipy
-scikit-learn
-
-# =============================================================================
-# Graph Analysis and Spatial Indexing (for HVAC System Analysis)
-# =============================================================================
-networkx
-rtree
-
-# =============================================================================
-# Distributed Inference and Deployment
-# =============================================================================
-ray[serve]
-
-# =============================================================================
-# Performance Optimization
-# =============================================================================
-python-dotenv
-tqdm
-# redis  # Caching (optional, for production)
-celery
-# wandb  # Experiment tracking (optional)
-
-# =============================================================================
-# Utilities
-# =============================================================================
-requests
-aiohttp
-python-json-logger
-
+# --- Utilities & Logging ---
+pydantic                # Data validation and settings management
+requests                # HTTP library for synchronous calls
+aiohttp                 # Async HTTP client
+tqdm                    # Progress bars
+python-json-logger      # JSON formatting for logs
+protobuf                # Data serialization

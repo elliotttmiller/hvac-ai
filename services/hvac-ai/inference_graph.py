@@ -1,33 +1,28 @@
 """
-Inference Graph - Distributed AI Pipeline using Ray Serve
-Implements a Directed Acyclic Graph (DAG) of independent deployments.
+Inference Graph - Distributed AI Pipeline using Ray Serve + FastAPI
+Implements a Directed Acyclic Graph (DAG) with explicit FastAPI routing.
 
-Architecture:
-1. Ingress (API Gateway) - Receives HTTP POST, decodes images
-2. ObjectDetector Node - Detects component geometry (OBB)
-3. Geometry Engine - Maps coordinates, performs perspective transforms
-4. TextExtractor Node - Reads text from straightened crops
-5. Fusion Layer - Merges spatial and text data into unified JSON
-
-Design Philosophy:
-- Uses Ray Serve for distributed inference
-- Fractional GPU allocation for efficient resource usage
-- Asynchronous processing for high throughput
-- Universal naming (ObjectDetector, TextExtractor, not YOLO/Paddle)
+FastAPI routes are mapped directly, so frontend requests to /api/hvac/analyze
+are properly caught and processed.
 """
 
 import logging
 import os
 import sys
-import time
 import numpy as np
 import cv2
 import base64
+import json
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 import asyncio
+import time
 
-# Ray Serve imports
+# FastAPI
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException
+from starlette.responses import JSONResponse
+
+# Ray
 try:
     import ray
     from ray import serve
@@ -35,135 +30,118 @@ try:
 except ImportError:
     raise RuntimeError("Ray Serve not installed. Install with: pip install ray[serve]")
 
-# Ensure the services directory is on sys.path for cross-service imports
+# --- PATH SETUP ---
 SCRIPT_DIR = Path(__file__).resolve().parent
 SERVICES_ROOT = SCRIPT_DIR.parent
+REPO_ROOT = SERVICES_ROOT.parent
+
+# Add paths for imports
 if str(SERVICES_ROOT) not in sys.path:
     sys.path.insert(0, str(SERVICES_ROOT))
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
 
-# Local imports (direct from hvac-ai service)
+# --- ENVIRONMENT CONFIGURATION ---
+def load_env_file(env_file_path):
+    """Load environment variables from .env.local file."""
+    if not env_file_path.exists():
+        return
+    
+    try:
+        with open(env_file_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                # Skip comments and empty lines
+                if not line or line.startswith('#'):
+                    continue
+                # Parse KEY=VALUE
+                if '=' in line:
+                    key, val = line.split('=', 1)
+                    key = key.strip()
+                    val = val.strip().strip('"').strip("'")
+                    # Only set if not already in environment
+                    if key and key not in os.environ:
+                        os.environ[key] = val
+    except Exception as e:
+        logger = logging.getLogger("RayServe-FastAPI")
+        logger.warning(f"Failed to load .env.local: {e}")
+
+# Load .env.local BEFORE importing services
+load_env_file(REPO_ROOT / ".env.local")
+
+# Extract configuration from environment
+SKIP_MODEL = os.environ.get('SKIP_MODEL', '0') == '1'
+FORCE_CPU = os.environ.get('FORCE_CPU', '0') == '1'
+MODEL_PATH = os.environ.get('MODEL_PATH')
+CONF_THRESHOLD = float(os.environ.get('CONF_THRESHOLD', '0.5'))
+
+logger = logging.getLogger("RayServe-FastAPI")
+logger.info("=" * 60)
+logger.info("[CONFIG] Inference Graph Configuration:")
+logger.info(f"  SKIP_MODEL: {SKIP_MODEL}")
+logger.info(f"  FORCE_CPU: {FORCE_CPU}")
+logger.info(f"  MODEL_PATH: {MODEL_PATH or '(not set)'}")
+logger.info(f"  CONF_THRESHOLD: {CONF_THRESHOLD}")
+logger.info("=" * 60)
+
+# Local Imports
 from object_detector_service import ObjectDetector
 from text_extractor_service import TextExtractor
 from utils.geometry import GeometryUtils, OBB
 
-logger = logging.getLogger(__name__)
-
-# Cross-service imports (from sibling hvac-domain service)
+# Cross-Service Import (Pricing)
 try:
-    # Import with fallback to handle different path configurations
-    try:
-        from pricing.pricing_service import PricingEngine, QuoteRequest, AnalysisData, QuoteSettings
-    except ImportError:
-        # Try alternative import path for hvac-domain
-        hvac_domain_path = SERVICES_ROOT / "hvac-domain"
-        if str(hvac_domain_path) not in sys.path:
-            sys.path.insert(0, str(hvac_domain_path))
-        from pricing.pricing_service import PricingEngine, QuoteRequest, AnalysisData, QuoteSettings
-except ImportError as e:
-    logger.warning(f"Failed to import PricingEngine: {e}")
-    logger.warning("Pricing functionality will be disabled")
-    PricingEngine = None
-    QuoteRequest = None
-    AnalysisData = None
-    QuoteSettings = None
+    from pricing.pricing_service import PricingEngine, QuoteRequest, AnalysisData
+    PRICING_AVAILABLE = True
+except ImportError:
+    PRICING_AVAILABLE = False
 
-# Configuration
 TEXT_RICH_CLASSES = {'id_letters', 'tag_number', 'text_label', 'label', 'text', 'tag'}
 
+# --- Ray Serve Deployments (The Workers) ---
 
-@serve.deployment(
-    ray_actor_options={
-        "num_gpus": 0.4,  # 40% VRAM allocation for ObjectDetector
-    },
-    max_concurrent_queries=10,
-)
+@serve.deployment(ray_actor_options={"num_gpus": 0.4}, max_ongoing_requests=10)
 class ObjectDetectorDeployment:
-    """
-    Ray Serve deployment for object detection.
-    Wraps the ObjectDetector service for distributed inference.
-    """
+    """Distributed object detection service."""
     
     def __init__(self, model_path: str, conf_threshold: float = 0.5):
-        """
-        Initialize the object detector deployment.
+        logger.info("[ObjectDetector] Initializing...")
         
-        Args:
-            model_path: Path to detection model weights
-            conf_threshold: Confidence threshold for detections
-        """
-        logger.info("[AI-ENGINE] Initializing ObjectDetectorDeployment...")
+        # Determine device based on environment variables
+        device = 'cpu' if FORCE_CPU else 'cuda'
+        logger.info(f"[ObjectDetector] Using device: {device}")
+        
         self.detector = ObjectDetector(
             model_path=model_path,
-            device='cuda',  # Will use the fractional GPU allocation
+            device=device,
             conf_threshold=conf_threshold
         )
-        logger.info("[AI-ENGINE] ObjectDetectorDeployment ready")
+        logger.info("[ObjectDetector] Ready")
     
     async def __call__(self, image_data: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """
-        Perform object detection on an image.
-        
-        Args:
-            image_data: Dictionary containing 'image' (numpy array) and optional params
-            
-        Returns:
-            List of detections
-        """
         image = image_data['image']
         conf_threshold = image_data.get('conf_threshold', None)
-        
-        # Run detection (synchronous call wrapped in async context)
         detections = await asyncio.to_thread(
             self.detector.detect,
             image,
             conf_threshold
         )
-        
         return detections
 
 
-@serve.deployment(
-    ray_actor_options={
-        "num_gpus": 0.3,  # 30% VRAM allocation for TextExtractor
-    },
-    max_concurrent_queries=10,
-)
+@serve.deployment(ray_actor_options={"num_gpus": 0.3}, max_ongoing_requests=10)
 class TextExtractorDeployment:
-    """
-    Ray Serve deployment for text extraction.
-    Wraps the TextExtractor service for distributed inference.
-    """
+    """Distributed text extraction service."""
     
-    def __init__(self, lang: str = 'en', use_gpu: bool = True):
-        """
-        Initialize the text extractor deployment.
-        
-        Args:
-            lang: Language code
-            use_gpu: Use GPU acceleration
-        """
-        logger.info("[AI-ENGINE] Initializing TextExtractorDeployment...")
-        self.extractor = TextExtractor(
-            lang=lang,
-            use_angle_cls=False,  # We handle rotation via geometry
-            use_gpu=use_gpu
-        )
-        logger.info("[AI-ENGINE] TextExtractorDeployment ready")
+    def __init__(self, use_gpu: bool = True):
+        logger.info("[TextExtractor] Initializing...")
+        self.extractor = TextExtractor(lang='en', use_angle_cls=False, use_gpu=use_gpu)
+        logger.info("[TextExtractor] Ready")
     
     async def __call__(self, crop_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """
-        Extract text from a cropped region.
-        
-        Args:
-            crop_data: Dictionary containing 'crop' (numpy array) and optional params
-            
-        Returns:
-            Extracted text result or None
-        """
         crop = crop_data['crop']
         conf_threshold = crop_data.get('conf_threshold', 0.5)
         
-        # Run text extraction (synchronous call wrapped in async context)
         result = await asyncio.to_thread(
             self.extractor.extract_single_text,
             crop,
@@ -172,374 +150,218 @@ class TextExtractorDeployment:
         
         if result:
             text, confidence = result
-            return {
-                'text': text,
-                'confidence': confidence
-            }
+            return {'text': text, 'confidence': confidence}
         return None
 
 
-@serve.deployment(
-    ray_actor_options={
-        "num_cpus": 1,  # CPU-only for ingress/fusion
-    },
-    max_concurrent_queries=20,
-)
-class InferenceGraphIngress:
-    """
-    Ingress node: API Gateway for the inference graph.
-    Orchestrates the entire pipeline:
-    1. Decode image
-    2. Call ObjectDetector
-    3. Filter for TEXT_RICH_CLASSES
-    4. Extract and rectify crops using GeometryUtils
-    5. Call TextExtractor for text-rich regions
-    6. Merge results and return
-    """
+# --- FastAPI App (The Router/Ingress) ---
+
+app = FastAPI(title="HVAC Cortex AI Platform")
+
+# Global handles (set by startup event)
+detector_handle: Optional[Any] = None
+extractor_handle: Optional[Any] = None
+pricing_engine: Optional[Any] = None
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize Ray deployments and services."""
+    global detector_handle, extractor_handle, pricing_engine
     
-    def __init__(
-        self,
-        object_detector_handle,
-        text_extractor_handle,
-        enable_pricing: bool = True,
-        default_location: str = "default"
-    ):
-        """
-        Initialize the ingress node with handles to downstream services.
-        
-        Args:
-            object_detector_handle: Ray Serve handle to ObjectDetectorDeployment
-            text_extractor_handle: Ray Serve handle to TextExtractorDeployment
-            enable_pricing: Enable pricing engine integration
-            default_location: Default location for pricing calculations
-        """
-        logger.info("[AI-ENGINE] Initializing InferenceGraphIngress...")
-        self.object_detector = object_detector_handle
-        self.text_extractor = text_extractor_handle
-        self.enable_pricing = enable_pricing and PricingEngine is not None
-        self.default_location = default_location
-        
-        # Initialize pricing engine if available
-        self.pricing_engine = None
-        if self.enable_pricing:
-            try:
-                # Find catalog path relative to hvac-domain service
-                catalog_path = SERVICES_ROOT / "hvac-domain" / "pricing" / "catalog.json"
-                if catalog_path.exists():
-                    self.pricing_engine = PricingEngine(catalog_path=catalog_path)
-                    logger.info("[AI-ENGINE] Pricing Engine initialized successfully")
-                else:
-                    logger.warning(f"[AI-ENGINE] Catalog not found at {catalog_path}, pricing disabled")
-                    self.enable_pricing = False
-            except Exception as e:
-                logger.error(f"[AI-ENGINE] Failed to initialize pricing engine: {e}")
-                self.enable_pricing = False
-        else:
-            logger.info("[AI-ENGINE] Pricing Engine disabled (not available or disabled by config)")
-        
-        logger.info("[AI-ENGINE] InferenceGraphIngress ready")
+    logger.info("[STARTUP] Initializing FastAPI + Ray Serve integration...")
     
-    async def __call__(self, request_data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Process a complete inference request.
-        
-        Args:
-            request_data: Dictionary containing:
-                - image_base64: Base64-encoded image
-                - or image: numpy array directly
-                - conf_threshold: Optional confidence threshold
-                - project_id: Optional project ID for quote generation
-                - location: Optional location for regional pricing
-                
-        Returns:
-            Complete analysis result with detections, text, and optional quote
-        """
+    # Get configuration from environment
+    model_path = os.getenv("MODEL_PATH", str(REPO_ROOT / "ai_model" / "models" / "hvac_obb_l_20251224_214011" / "weights" / "best.pt"))
+    conf_threshold = float(os.getenv("CONF_THRESHOLD", "0.5"))
+    enable_pricing = os.getenv("ENABLE_PRICING", "1").lower() not in ('0', 'false')
+    use_gpu = not FORCE_CPU
+    
+    logger.info(f"[STARTUP] Model Path: {model_path}")
+    logger.info(f"[STARTUP] Pricing Enabled: {enable_pricing}")
+    logger.info(f"[STARTUP] GPU Enabled: {use_gpu}")
+    logger.info(f"[STARTUP] FORCE_CPU: {FORCE_CPU}")
+    
+    # Bind deployments
+    detector_handle = ObjectDetectorDeployment.bind(
+        model_path=model_path,
+        conf_threshold=conf_threshold
+    )
+    extractor_handle = TextExtractorDeployment.bind(use_gpu=use_gpu)
+    
+    # Initialize pricing if available
+    if enable_pricing and PRICING_AVAILABLE:
         try:
-            # 1. Decode image
-            if 'image_base64' in request_data:
-                image = self._decode_image(request_data['image_base64'])
-            elif 'image' in request_data:
-                image = request_data['image']
-            else:
-                raise ValueError("No image provided")
-            
-            conf_threshold = request_data.get('conf_threshold', 0.5)
-            
-            # 2. Object Detection
-            logger.info("Running object detection...")
-            detections = await self.object_detector.remote({
-                'image': image,
-                'conf_threshold': conf_threshold
-            })
-            
-            # 3. Filter for text-rich classes and process
-            logger.info(f"Processing {len(detections)} detections...")
-            enriched_detections = await self._process_detections(
-                detections,
-                image,
-                conf_threshold
-            )
-            
-            # 4. Generate pricing quote if enabled
-            quote = None
-            if self.enable_pricing and self.pricing_engine:
-                try:
-                    quote = await self._generate_quote(
-                        enriched_detections,
-                        request_data.get('project_id', f'AUTO-{int(time.time())}'),
-                        request_data.get('location', self.default_location)
-                    )
-                except Exception as e:
-                    logger.error(f"Quote generation failed: {e}", exc_info=True)
-                    # Continue without quote rather than failing the entire request
-            
-            # 5. Build response
-            response = {
-                'status': 'success',
-                'total_detections': len(enriched_detections),
-                'detections': enriched_detections,
-                'image_shape': image.shape[:2]
-            }
-            
-            # Add quote to response if available
-            if quote:
-                response['quote'] = quote
-            
-            return response
-            
+            catalog_path = SERVICES_ROOT / "hvac-domain" / "pricing" / "catalog.json"
+            pricing_engine = PricingEngine(catalog_path=catalog_path)
+            logger.info("[STARTUP] ✅ Pricing Engine Initialized")
         except Exception as e:
-            logger.error(f"Inference failed: {e}", exc_info=True)
-            return {
-                'status': 'error',
-                'error': str(e)
-            }
+            logger.error(f"[STARTUP] ❌ Failed to init Pricing: {e}")
+            pricing_engine = None
     
-    async def _process_detections(
-        self,
-        detections: List[Dict[str, Any]],
-        image: np.ndarray,
-        conf_threshold: float
-    ) -> List[Dict[str, Any]]:
-        """
-        Process detections: extract text for text-rich classes.
+    logger.info("[STARTUP] ✅ All services ready")
+
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint."""
+    return {
+        "status": "healthy",
+        "pricing_enabled": pricing_engine is not None,
+        "detections_available": detector_handle is not None,
+        "text_extraction_available": extractor_handle is not None
+    }
+
+
+@app.post("/api/hvac/analyze")
+async def analyze_image(
+    file: UploadFile = File(...),
+    conf_threshold: float = Form(0.5),
+    project_id: Optional[str] = Form(None),
+    location: Optional[str] = Form(None)
+):
+    """
+    Main analysis endpoint.
+    
+    Accepts an image file and returns:
+    - Detected objects with locations
+    - Extracted text from text-rich regions
+    - Optional pricing quote
+    """
+    
+    if not detector_handle or not extractor_handle:
+        raise HTTPException(status_code=503, detail="AI services not initialized")
+    
+    try:
+        # 1. READ AND DECODE IMAGE
+        logger.info("📥 Reading image...")
+        contents = await file.read()
+        nparr = np.frombuffer(contents, np.uint8)
+        image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         
-        Args:
-            detections: List of detections from ObjectDetector
-            image: Original image
-            conf_threshold: Confidence threshold for text extraction
-            
-        Returns:
-            Enriched detections with text content
-        """
-        enriched = []
+        if image is None:
+            raise ValueError("Failed to decode image")
         
-        # Process text-rich detections in parallel
+        logger.info(f"📊 Image shape: {image.shape}")
+        
+        # 2. OBJECT DETECTION
+        logger.info("🔍 Running object detection...")
+        detections = await detector_handle.remote({
+            'image': image,
+            'conf_threshold': conf_threshold
+        })
+        logger.info(f"✅ Found {len(detections)} objects")
+        
+        # 3. TEXT EXTRACTION (SELECTIVE)
+        logger.info("📝 Processing text-rich regions...")
+        enriched_detections = []
         text_tasks = []
         text_indices = []
         
-        for i, detection in enumerate(detections):
-            label = detection['label'].lower()
+        for i, det in enumerate(detections):
+            enriched_det = det.copy()
+            enriched_detections.append(enriched_det)
             
-            # Check if this is a text-rich class (exact word matching to avoid false positives)
+            label = det.get('label', '').lower()
             is_text_rich = label in TEXT_RICH_CLASSES or any(
-                label == text_class or 
-                label.startswith(text_class + '_') or 
-                label.endswith('_' + text_class) or
-                ('_' + text_class + '_') in label
-                for text_class in TEXT_RICH_CLASSES
+                label == tc or 
+                label.startswith(tc + '_') or 
+                label.endswith('_' + tc) or
+                ('_' + tc + '_') in label
+                for tc in TEXT_RICH_CLASSES
             )
             
-            if is_text_rich:
-                # Extract and rectify the region
-                if 'obb' in detection:
-                    # Use OBB geometry
+            if is_text_rich and 'obb' in det:
+                try:
+                    # Extract region using OBB
                     obb = OBB(
-                        x_center=detection['obb']['x_center'],
-                        y_center=detection['obb']['y_center'],
-                        width=detection['obb']['width'],
-                        height=detection['obb']['height'],
-                        rotation=detection['obb']['rotation']
+                        x_center=det['obb']['x_center'],
+                        y_center=det['obb']['y_center'],
+                        width=det['obb']['width'],
+                        height=det['obb']['height'],
+                        rotation=det['obb']['rotation']
                     )
-                    
-                    # Extract and preprocess crop
                     crop, metadata = GeometryUtils.extract_and_preprocess_obb(
                         image, obb, padding=5, preprocess=True
                     )
                     
-                    if 'error' not in metadata:
-                        # Schedule text extraction
+                    if 'error' not in metadata and crop is not None:
                         text_indices.append(i)
                         text_tasks.append(
-                            self.text_extractor.remote({
+                            extractor_handle.remote({
                                 'crop': crop,
                                 'conf_threshold': conf_threshold
                             })
                         )
-                elif 'bbox' in detection:
-                    # Use standard bbox
-                    x1, y1, x2, y2 = detection['bbox']
-                    crop = image[int(y1):int(y2), int(x1):int(x2)]
-                    
-                    # Preprocess
-                    crop_processed = GeometryUtils.preprocess_for_ocr(crop)
-                    
-                    # Schedule text extraction
-                    text_indices.append(i)
-                    text_tasks.append(
-                        self.text_extractor.remote({
-                            'crop': crop_processed,
-                            'conf_threshold': conf_threshold
-                        })
-                    )
+                except Exception as e:
+                    logger.warning(f"Failed to extract crop: {e}")
         
-        # Wait for all text extractions
+        # Wait for text extraction
         if text_tasks:
+            logger.info(f"⏳ Extracting text from {len(text_tasks)} regions...")
             text_results = await asyncio.gather(*text_tasks)
-            
-            # Map results back to detections
-            text_map = dict(zip(text_indices, text_results))
-        else:
-            text_map = {}
+            for idx, result in zip(text_indices, text_results):
+                if result:
+                    enriched_detections[idx]['textContent'] = result['text']
+                    enriched_detections[idx]['textConfidence'] = result['confidence']
         
-        # Build enriched detections
-        for i, detection in enumerate(detections):
-            enriched_det = detection.copy()
-            
-            # Add text content if available
-            if i in text_map and text_map[i]:
-                enriched_det['textContent'] = text_map[i]['text']
-                enriched_det['textConfidence'] = text_map[i]['confidence']
-            
-            enriched.append(enriched_det)
+        # 4. PRICING (OPTIONAL)
+        quote = None
+        if pricing_engine:
+            try:
+                logger.info("💰 Generating quote...")
+                # Count by category
+                counts = {}
+                for det in enriched_detections:
+                    label = det.get('label', '').lower().replace(' ', '_').replace('-', '_')
+                    counts[label] = counts.get(label, 0) + 1
+                
+                # Create quote request
+                analysis_data = AnalysisData(
+                    total_objects=len(enriched_detections),
+                    counts_by_category=counts
+                )
+                quote_request = QuoteRequest(
+                    project_id=project_id or f"AUTO-{int(time.time())}",
+                    location=location or "default",
+                    analysis_data=analysis_data,
+                    settings=None
+                )
+                
+                # Generate quote
+                quote_response = await asyncio.to_thread(
+                    pricing_engine.generate_quote,
+                    quote_request
+                )
+                
+                # Convert to dict
+                try:
+                    quote = quote_response.model_dump()
+                except AttributeError:
+                    quote = quote_response.dict()
+                logger.info("✅ Quote generated")
+            except Exception as e:
+                logger.warning(f"Quote generation failed: {e}")
         
-        return enriched
+        # 5. BUILD RESPONSE
+        logger.info("✨ Building response...")
+        response_data = {
+            "status": "success",
+            "detections": enriched_detections,
+            "total_detections": len(enriched_detections),
+            "image_shape": image.shape[:2],
+            "quote": quote
+        }
+        
+        logger.info("✅ Analysis complete")
+        return JSONResponse(response_data)
     
-    def _decode_image(self, image_base64: str) -> np.ndarray:
-        """Decode base64 image to numpy array."""
-        image_bytes = base64.b64decode(image_base64)
-        nparr = np.frombuffer(image_bytes, np.uint8)
-        image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-        return image
-    
-    async def _generate_quote(
-        self,
-        detections: List[Dict[str, Any]],
-        project_id: str,
-        location: str
-    ) -> Dict[str, Any]:
-        """
-        Generate a pricing quote from detections.
-        
-        Args:
-            detections: List of enriched detections
-            project_id: Project identifier
-            location: Location for regional pricing
-            
-        Returns:
-            Quote dictionary or None if pricing fails
-        """
-        # Count detections by category
-        counts_by_category = {}
-        for detection in detections:
-            label = detection.get('label', '').lower()
-            # Normalize label for catalog lookup
-            normalized_label = label.replace(' ', '_').replace('-', '_')
-            counts_by_category[normalized_label] = counts_by_category.get(normalized_label, 0) + 1
-        
-        # Create analysis data
-        analysis_data = AnalysisData(
-            total_objects=len(detections),
-            counts_by_category=counts_by_category
-        )
-        
-        # Create quote request
-        quote_request = QuoteRequest(
-            project_id=project_id,
-            location=location,
-            analysis_data=analysis_data,
-            settings=None  # Use defaults
-        )
-        
-        # Generate quote (run in thread to avoid blocking async loop)
-        # Note: asyncio.to_thread creates a thread per request. Under high load,
-        # consider using a shared ThreadPoolExecutor for better resource management.
-        quote_response = await asyncio.to_thread(
-            self.pricing_engine.generate_quote,
-            quote_request
-        )
-        
-        # Convert Pydantic model to dict
-        try:
-            return quote_response.model_dump()  # Pydantic v2
-        except AttributeError:
-            return quote_response.dict()  # Pydantic v1
+    except Exception as e:
+        logger.error(f"❌ Analysis failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-def build_inference_graph(
-    model_path: str,
-    conf_threshold: float = 0.5,
-    enable_pricing: bool = True,
-    default_location: str = "default"
-) -> Application:
-    """
-    Build and return the complete inference graph application.
-    
-    Args:
-        model_path: Path to YOLO model weights
-        conf_threshold: Default confidence threshold
-        enable_pricing: Enable pricing engine integration
-        default_location: Default location for pricing
-        
-    Returns:
-        Ray Serve Application
-    """
-    # Deploy ObjectDetector
-    object_detector = ObjectDetectorDeployment.bind(
-        model_path=model_path,
-        conf_threshold=conf_threshold
-    )
-    
-    # Deploy TextExtractor
-    text_extractor = TextExtractorDeployment.bind(
-        lang='en',
-        use_gpu=True
-    )
-    
-    # Deploy Ingress with handles to other services
-    ingress = InferenceGraphIngress.bind(
-        object_detector_handle=object_detector,
-        text_extractor_handle=text_extractor,
-        enable_pricing=enable_pricing,
-        default_location=default_location
-    )
-    
-    return ingress
-
-
-# Entrypoint for Ray Serve CLI
-def entrypoint():
-    """
-    Entrypoint for Ray Serve: serve run inference_graph:entrypoint
-    """
-    # Get model path from environment or use relative default
-    # Try to find model relative to the current directory structure
-    default_model = os.path.join(os.getcwd(), 'ai_model', 'best.pt')
-    if not os.path.exists(default_model):
-        # Try parent directory
-        default_model = os.path.join(os.path.dirname(os.getcwd()), 'ai_model', 'best.pt')
-    
-    # Prefer MODEL_PATH env var; fall back to legacy YOLO_MODEL_PATH for compatibility
-    model_path = os.getenv('MODEL_PATH') or os.getenv('YOLO_MODEL_PATH') or default_model
-    
-    conf_threshold = float(os.getenv('CONF_THRESHOLD', '0.5'))
-    enable_pricing = os.getenv('ENABLE_PRICING', '1').lower() not in ('0', 'false', 'no')
-    default_location = os.getenv('DEFAULT_LOCATION', 'default')
-    
-    logger.info(f"Building inference graph with model: {model_path}")
-    logger.info(f"Pricing enabled: {enable_pricing}")
-    return build_inference_graph(
-        model_path,
-        conf_threshold,
-        enable_pricing=enable_pricing,
-        default_location=default_location
-    )
+# --- Ray Serve Entrypoint ---
+# The FastAPI app is the entry point
+# No wrapper needed - the app handles all ASGI requests
+entrypoint = app

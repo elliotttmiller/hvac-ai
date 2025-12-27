@@ -17,10 +17,16 @@ import threading
 import queue as _queue
 import json
 import time
+import importlib.util
+from typing import Optional, Any
 
 # --- CONFIGURATION ---
 # Force unbuffered output for Colab real-time logs
-sys.stdout.reconfigure(line_buffering=True)
+try:
+    sys.stdout.reconfigure(line_buffering=True)  # type: ignore
+except (AttributeError, ValueError):
+    # Not supported on all systems (e.g., Windows stdout might not support reconfigure)
+    pass
 
 logging.basicConfig(
     level=logging.INFO, 
@@ -30,26 +36,54 @@ logging.basicConfig(
 logger = logging.getLogger("API_SERVER")
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+SERVICES_ROOT = Path(__file__).resolve().parent
 env_file = PROJECT_ROOT / ".env"
 load_dotenv(dotenv_path=env_file)
 
 MODEL_PATH = os.getenv("MODEL_PATH")
 
-import sys
-sys.path.append(str(PROJECT_ROOT))
-from services.hvac_ai.yolo_inference import create_yolo_engine
-from services.hvac_domain.pricing.pricing_service import PricingEngine, QuoteRequest
+# Ensure services and hvac-ai directories are in path for imports
+if str(SERVICES_ROOT) not in sys.path:
+    sys.path.insert(0, str(SERVICES_ROOT))
+
+hvac_ai_path = SERVICES_ROOT / "hvac-ai"
+if str(hvac_ai_path) not in sys.path:
+    sys.path.insert(0, str(hvac_ai_path))
+
+# Add hvac-domain to path for pricing imports
+hvac_domain_path = SERVICES_ROOT / "hvac-domain"
+if str(hvac_domain_path) not in sys.path:
+    sys.path.insert(0, str(hvac_domain_path))
+
+# Import YOLO inference engine
+create_yolo_engine: Optional[Any] = None
+try:
+    from yolo_inference import create_yolo_engine  # type: ignore
+except ImportError as e:
+    logger.warning(f"Failed to import yolo_inference: {e}")
+
+# Import pricing
+PricingEngine: Optional[Any] = None
+QuoteRequest: Optional[Any] = None
+try:
+    from pricing.pricing_service import PricingEngine, QuoteRequest  # type: ignore
+except ImportError as e:
+    logger.warning(f"Failed to import pricing: {e}")
 
 # Try to import pipeline (may not be available if dependencies missing)
+pipeline_router: Optional[Any] = None
+initialize_pipeline: Optional[Any] = None
+PipelineConfig: Optional[Any] = None
+PIPELINE_AVAILABLE = False
+
 try:
-    from services.hvac_ai.pipeline_api import router as pipeline_router, initialize_pipeline
-    from services.hvac_ai.pipeline_models import PipelineConfig
+    from pipeline_api import router as pipeline_router, initialize_pipeline  # type: ignore
+    from pipeline_models import PipelineConfig  # type: ignore
     PIPELINE_AVAILABLE = True
 except ImportError as e:
     logger.warning(f"⚠️  Pipeline not available: {e}")
     logger.warning("   Install easyocr to enable full pipeline: pip install easyocr")
     PIPELINE_AVAILABLE = False
-    pipeline_router = None
 
 # --- LIFESPAN ---
 ml_models = {}
@@ -62,9 +96,12 @@ async def lifespan(app: FastAPI):
     
     # Initialize Pricing Engine
     try:
-        logger.info("🔄 Initializing Pricing Engine...")
-        pricing_engine = PricingEngine()
-        logger.info("✅ Pricing Engine initialized successfully")
+        if PricingEngine is not None:
+            logger.info("🔄 Initializing Pricing Engine...")
+            pricing_engine = PricingEngine()
+            logger.info("✅ Pricing Engine initialized successfully")
+        else:
+            logger.warning("⚠️  Pricing Engine not available")
     except Exception as e:
         logger.error(f"❌ Pricing Engine Init Failed: {e}", exc_info=True)
         logger.error("   Quote generation endpoints may not work")
@@ -77,12 +114,15 @@ async def lifespan(app: FastAPI):
         logger.error("   Please ensure the model file exists at the specified path")
     else:
         try:
-            logger.info("🔄 Initializing YOLO inference engine...")
-            ml_models["yolo_engine"] = create_yolo_engine(model_path=MODEL_PATH)
-            logger.info("✅ Inference Engine Attached and Ready.")
+            if create_yolo_engine is not None:
+                logger.info("🔄 Initializing YOLO inference engine...")
+                ml_models["yolo_engine"] = create_yolo_engine(model_path=MODEL_PATH)
+                logger.info("✅ Inference Engine Attached and Ready.")
+            else:
+                logger.error("❌ YOLO inference engine not available")
             
             # Initialize end-to-end pipeline if available
-            if PIPELINE_AVAILABLE:
+            if PIPELINE_AVAILABLE and PipelineConfig is not None and initialize_pipeline is not None:
                 try:
                     logger.info("🔄 Initializing HVAC End-to-End Pipeline...")
                     pipeline_config = PipelineConfig(
@@ -415,8 +455,8 @@ async def generate_quote(request: Request):
     """
     logger.info(f"📡 [API] Received Quote Generation Request")
     
-    if not pricing_engine:
-        logger.error("Pricing engine not loaded")
+    if not pricing_engine or QuoteRequest is None:
+        logger.error("Pricing engine or QuoteRequest model not loaded")
         raise HTTPException(
             status_code=503,
             detail="Pricing engine not initialized. Check server logs."

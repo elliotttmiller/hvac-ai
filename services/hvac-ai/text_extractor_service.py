@@ -64,18 +64,17 @@ class TextExtractor:
             
             # Import PaddleOCR
             try:
-                from paddleocr import PaddleOCR
+                from paddleocr import PaddleOCR  # type: ignore
             except ImportError:
                 logger.error("PaddleOCR not installed. Install with: pip install paddleocr paddlepaddle")
                 raise RuntimeError("PaddleOCR not available")
             
             # Initialize PaddleOCR
+            # Note: Newer versions of PaddleOCR auto-detect GPU and removed explicit flags
+            # We pass only the essential parameters to be safe across different PaddleOCR versions
             self.ocr_engine = PaddleOCR(
-                lang=self.lang,
                 use_angle_cls=self.use_angle_cls,
-                use_gpu=self.use_gpu,
-                enable_mkldnn=self.enable_mkldnn,
-                show_log=False
+                lang=self.lang
             )
             
             logger.info("[OK] OCR engine loaded successfully")

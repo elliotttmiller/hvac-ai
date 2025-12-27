@@ -167,14 +167,14 @@ export default function Dashboard() {
                   </Button>
                 </Link>
 
-                <Link href="/documents">
+                <Link href="/projects">
                   <Button className="w-full justify-start" variant="outline">
                     <Bot className="mr-2 h-4 w-4" />
                     Analyze with AI
                   </Button>
                 </Link>
 
-                <Link href="/documents">
+                <Link href="/projects">
                   <Button className="w-full justify-start" variant="outline">
                     <Building2 className="mr-2 h-4 w-4" />
                     Analyze Blueprints

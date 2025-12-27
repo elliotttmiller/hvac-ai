@@ -1,6 +1,7 @@
 'use client';
 
 import { ReactNode, useState, useEffect } from 'react';
+import { usePathname } from 'next/navigation';
 import { Navigation } from './Navigation';
 import { Header } from './Header';
 
@@ -30,6 +31,9 @@ export function AppShell({
   collapsible = true,
   defaultCollapsed = false,
 }: AppShellProps) {
+  const pathname = usePathname();
+  const isWorkspaceRoute = pathname?.startsWith('/workspace');
+  
   const [collapsed, setCollapsed] = useState(defaultCollapsed);
   const [isMobile, setIsMobile] = useState(false);
 
@@ -51,23 +55,25 @@ export function AppShell({
 
   return (
     <div className="h-screen flex overflow-hidden bg-background">
-      {/* Sidebar Navigation */}
-      <Navigation
-        collapsed={collapsed}
-        onToggle={collapsible ? () => setCollapsed((c) => !c) : undefined}
-        navigation={navigation}
-      />
+      {/* Sidebar Navigation - Hidden in workspace routes */}
+      {!isWorkspaceRoute && (
+        <Navigation
+          collapsed={collapsed}
+          onToggle={collapsible ? () => setCollapsed((c) => !c) : undefined}
+          navigation={navigation}
+        />
+      )}
 
       {/* Main Content Area - Responsive margins with smooth transitions */}
       <div
         className={`
           flex-1 flex flex-col
           transition-all duration-300 ease-in-out
-          ${isMobile ? 'ml-0' : (collapsed ? 'ml-20' : 'ml-64')}
+          ${isMobile || isWorkspaceRoute ? 'ml-0' : (collapsed ? 'ml-20' : 'ml-64')}
         `}
       >
-        {/* Top Header */}
-        <Header content={headerContent} />
+        {/* Top Header - Hidden in workspace routes */}
+        {!isWorkspaceRoute && <Header content={headerContent} />}
 
         {/* Page Content - Responsive padding and smooth scrolling */}
         <main className="flex-1 overflow-auto scroll-smooth">

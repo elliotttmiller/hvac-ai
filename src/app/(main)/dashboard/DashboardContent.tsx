@@ -1,20 +1,25 @@
 'use client';
 
 import React, { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { FileUploader } from '@/components/features/ingestion/FileUploader';
 import { InteractiveViewer, OverlayItem } from '@/components/features/visualization/InteractiveViewer';
 import { ViewportControls } from '@/components/features/visualization/ViewportControls';
 import { QuoteBuilder, QuoteData } from '@/components/features/estimation/QuoteBuilder';
-import { Card, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Button } from '@/components/ui/button';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Upload,
   Eye,
   Calculator,
   FileText,
-  ArrowLeft
+  ArrowLeft,
+  Settings,
+  BarChart3,
+  Zap
 } from 'lucide-react';
 
 interface DashboardContentProps {
@@ -35,20 +40,23 @@ export default function DashboardContent({
   onBack,
   mode = 'dashboard'
 }: DashboardContentProps) {
+  const router = useRouter();
   const [file, setFile] = useState<File | null>(initialFile || null);
   const [analysisData, setAnalysisData] = useState<{
     detections?: OverlayItem[];
     quote?: QuoteData;
   } | null>(initialAnalysisData || null);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [currentStep, setCurrentStep] = useState<'upload' | 'analyze' | 'quote'>(
-    initialFile ? 'analyze' : 'upload'
-  );
+  const [activeTab, setActiveTab] = useState<string>('viewport');
+  const [showQuoteEngine, setShowQuoteEngine] = useState(false);
+
+  // Create an onBack handler for workspace mode
+  const handleBack = onBack || (mode === 'workspace' ? () => router.back() : undefined);
 
   const handleUpload = async (uploadedFile: File) => {
     setFile(uploadedFile);
     setIsProcessing(true);
-    setCurrentStep('analyze');
+    setAnalysisData(null);
 
     try {
       // Send file to real analysis API
@@ -88,7 +96,7 @@ export default function DashboardContent({
         })));
       }
 
-      // Set analysis data with real results
+      // Set analysis data with real results (DO NOT AUTO-GENERATE QUOTE)
       setAnalysisData({
         detections: detections.length > 0 ? detections : [
           {
@@ -99,87 +107,88 @@ export default function DashboardContent({
             textContent: 'Detected Component',
             textConfidence: 0.89
           }
-        ],
-        quote: {
-          quote_id: projectId ? `QUOTE-${projectId}` : `QUOTE-${Date.now()}`,
-          line_items: [
-            {
-              category: 'detected_component',
-              sku_name: 'Analyzed HVAC Component',
-              count: detections.length || 1,
-              unit_material_cost: 250.00,
-              total_line_cost: 250.00 * (detections.length || 1)
-            }
-          ],
-          summary: {
-            subtotal_materials: 250.00 * (detections.length || 1),
-            subtotal_labor: 120.00,
-            total_cost: 370.00 * (detections.length || 1),
-            final_price: 370.00 * (detections.length || 1)
-          }
-        }
+        ]
       });
-      setCurrentStep('quote');
+      
+      // Auto-switch to viewport tab to show results
+      setActiveTab('viewport');
+      setShowQuoteEngine(false);
     } catch (error) {
       console.error('Analysis failed:', error);
-      setIsProcessing(false);
-      // Show error state but keep file loaded
-      setAnalysisData({
-        detections: [{
-          id: 'error',
-          label: 'error',
-          score: 0,
-          bbox: [0, 0, 100, 100],
-          textContent: 'Analysis failed. Try again or download the file.',
-          textConfidence: 0
-        }]
-      });
+      setAnalysisData(null);
     } finally {
       setIsProcessing(false);
     }
   };
 
-  const steps = [
-    { id: 'upload', label: 'Upload', icon: Upload },
-    { id: 'analyze', label: 'Analyze', icon: Eye },
-    { id: 'quote', label: 'Quote', icon: Calculator },
-  ];
+  const handleGenerateQuote = () => {
+    if (!analysisData?.detections) return;
+    
+    // Generate quote based on actual detections
+    const quoteData: QuoteData = {
+      quote_id: projectId ? `QUOTE-${projectId}` : `QUOTE-${Date.now()}`,
+      line_items: analysisData.detections.map((d, idx) => ({
+        category: d.label,
+        sku_name: `${d.label.toUpperCase()} ${d.textContent || idx + 1}`,
+        count: 1,
+        unit_material_cost: 250.00,
+        total_line_cost: 250.00
+      })),
+      summary: {
+        subtotal_materials: 250.00 * analysisData.detections.length,
+        subtotal_labor: 120.00,
+        total_cost: 370.00 * analysisData.detections.length,
+        final_price: 370.00 * analysisData.detections.length
+      }
+    };
+    
+    setAnalysisData(prev => ({
+      ...prev,
+      quote: quoteData
+    }));
+    setShowQuoteEngine(true);
+    setActiveTab('quote');
+  };
 
   if (!file) {
     return (
-      <div className="h-full flex flex-col">
+      <div className="w-full h-screen flex flex-col bg-gradient-to-br from-slate-50 to-slate-100">
         {/* Header */}
-        {mode === 'workspace' && projectId && (
-          <div className="flex items-center justify-between p-6 border-b border-slate-200">
-            <div className="flex items-center gap-4">
-              {onBack && (
-                <Button variant="ghost" size="sm" onClick={onBack}>
-                  <ArrowLeft className="h-4 w-4 mr-2" />
-                  Back
-                </Button>
-              )}
-              <div>
-                <h1 className="text-2xl font-bold">Project {projectId}</h1>
-                <p className="text-slate-600">HVAC Analysis & Quoting</p>
-              </div>
+        <div className="flex items-center justify-between px-8 py-6 border-b border-slate-200 bg-white shadow-sm">
+          <div className="flex items-center gap-4">
+            {handleBack && (
+              <Button variant="ghost" size="sm" onClick={handleBack}>
+                <ArrowLeft className="h-4 w-4 mr-2" />
+                Back
+              </Button>
+            )}
+            <div>
+              <h1 className="text-3xl font-bold text-slate-900">
+                {mode === 'workspace' ? 'Blueprint Analysis' : 'Analysis Platform'}
+              </h1>
+              <p className="text-sm text-slate-600">
+                {projectId ? `Project ${projectId}` : 'HVAC Blueprint & Component Detection'}
+              </p>
             </div>
           </div>
-        )}
+        </div>
 
         {/* Upload Area */}
-        <div className="flex-1 flex items-center justify-center p-8">
-          <div className="max-w-md w-full">
-            <FileUploader
-              onUpload={handleUpload}
-              isProcessing={isProcessing}
-              title={mode === 'workspace' ? "Upload Blueprint" : "Upload Blueprint or Document"}
-              subtitle={mode === 'workspace'
-                ? "Drop your HVAC blueprint here or click to browse"
-                : "Supports PDF, PNG, JPG, DWG/DXF files (Max 50MB)"
-              }
-              processButtonText="Analyze Document"
-              showProcessControls={mode === 'dashboard'}
-            />
+        <div className="flex-1 flex items-center justify-center p-12">
+          <div className="max-w-2xl w-full">
+            <div className="bg-white rounded-2xl shadow-lg p-12">
+              <FileUploader
+                onUpload={handleUpload}
+                isProcessing={isProcessing}
+                title={mode === 'workspace' ? "Upload Blueprint" : "Upload Blueprint or Document"}
+                subtitle={mode === 'workspace'
+                  ? "Drop your HVAC blueprint, CAD file, or image here"
+                  : "Supports PDF, PNG, JPG, DWG, DXF files (Max 500MB)"
+                }
+                processButtonText="Analyze Document"
+                showProcessControls={false}
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -187,129 +196,186 @@ export default function DashboardContent({
   }
 
   return (
-    <div className="h-full flex flex-col">
-      {/* Header */}
-      {mode === 'workspace' && projectId && (
-        <div className="flex items-center justify-between p-6 border-b border-slate-200">
-          <div className="flex items-center gap-4">
-            {onBack && (
-              <Button variant="ghost" size="sm" onClick={onBack}>
-                <ArrowLeft className="h-4 w-4 mr-2" />
-                Back
-              </Button>
-            )}
-            <div>
-              <h1 className="text-2xl font-bold">Project {projectId}</h1>
-              <p className="text-slate-600">HVAC Analysis & Quoting</p>
-            </div>
-          </div>
-
-          {/* Step Indicator */}
-          <div className="flex items-center gap-2">
-            {steps.map((step, index) => {
-              const Icon = step.icon;
-              const isActive = step.id === currentStep;
-              const isCompleted = steps.findIndex(s => s.id === currentStep) > index;
-
-              return (
-                <React.Fragment key={step.id}>
-                  <div className={`flex items-center gap-2 px-3 py-1 rounded-lg ${
-                    isActive ? 'bg-blue-100 text-blue-900' :
-                    isCompleted ? 'bg-green-100 text-green-900' :
-                    'bg-slate-100 text-slate-600'
-                  }`}>
-                    <Icon className="h-4 w-4" />
-                    <span className="text-sm font-medium">{step.label}</span>
-                  </div>
-                  {index < steps.length - 1 && (
-                    <div className={`w-8 h-px ${
-                      isCompleted ? 'bg-green-400' : 'bg-slate-300'
-                    }`} />
-                  )}
-                </React.Fragment>
-              );
-            })}
+    <div className="w-full h-screen flex flex-col bg-slate-950 overflow-hidden">
+      {/* Top Bar - Minimal Header */}
+      <div className="flex items-center justify-between px-6 py-4 bg-slate-900 border-b border-slate-800 shadow-md z-50">
+        <div className="flex items-center gap-3">
+          {handleBack && (
+            <Button variant="ghost" size="sm" onClick={handleBack} className="text-slate-300 hover:text-white">
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Back
+            </Button>
+          )}
+          <div className="border-l border-slate-700 pl-4">
+            <h1 className="text-xl font-bold text-white">
+              {file?.name || 'Analysis'}
+            </h1>
+            <p className="text-xs text-slate-400">
+              {analysisData?.detections ? `${analysisData.detections.length} components detected` : 'Processing...'}
+            </p>
           </div>
         </div>
-      )}
+        
+        <div className="flex items-center gap-3">
+          {analysisData?.detections && (
+            <Button 
+              onClick={handleGenerateQuote}
+              disabled={showQuoteEngine}
+              className="bg-emerald-600 hover:bg-emerald-700"
+            >
+              <Zap className="h-4 w-4 mr-2" />
+              Generate Quote
+            </Button>
+          )}
+          <Button 
+            variant="outline" 
+            size="sm"
+            onClick={() => {
+              setFile(null);
+              setAnalysisData(null);
+              setShowQuoteEngine(false);
+            }}
+          >
+            New Upload
+          </Button>
+        </div>
+      </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-hidden">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 p-6 h-full">
-          {/* Left: Visual Analysis */}
-          <div className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Eye className="h-5 w-5" />
-                  Visual Analysis
-                </CardTitle>
-              </CardHeader>
-              <div className="p-4">
-                <div className="aspect-video bg-slate-900 rounded-lg overflow-hidden">
-                  <InteractiveViewer
-                    sourceUrl={URL.createObjectURL(file)}
-                    overlays={analysisData?.detections}
-                    className="w-full h-full"
-                  />
-                </div>
-              </div>
-            </Card>
+      {/* Main Content - Full Page Layout */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Left Panel - Viewport (70%) */}
+        <div className="flex-1 flex flex-col bg-slate-950 border-r border-slate-800">
+          <div className="flex-1 overflow-hidden p-4 bg-slate-900">
+            <div className="w-full h-full bg-black rounded-lg overflow-hidden shadow-2xl">
+              <InteractiveViewer
+                sourceUrl={URL.createObjectURL(file)}
+                overlays={analysisData?.detections}
+                className="w-full h-full"
+              />
+            </div>
+          </div>
+        </div>
 
-            {/* Analysis Summary */}
-            {analysisData?.detections && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <FileText className="h-5 w-5" />
-                    Analysis Summary
-                  </CardTitle>
-                </CardHeader>
-                <div className="p-4 space-y-3">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-slate-600">Objects Detected</span>
-                    <Badge variant="secondary">{analysisData.detections.length}</Badge>
+        {/* Right Sidebar - Tabs Panel (30%) */}
+        <div className="w-[360px] flex flex-col bg-slate-900 border-l border-slate-800 overflow-hidden">
+          <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col h-full">
+            {/* Tab List */}
+            <div className="border-b border-slate-800 bg-slate-950 px-4 pt-4">
+              <TabsList className="w-full bg-slate-800 grid grid-cols-3">
+                <TabsTrigger value="viewport" className="text-xs">
+                  <Eye className="h-3 w-3 mr-1" />
+                  Viewport
+                </TabsTrigger>
+                <TabsTrigger value="analysis" className="text-xs">
+                  <BarChart3 className="h-3 w-3 mr-1" />
+                  Analysis
+                </TabsTrigger>
+                <TabsTrigger value="quote" className="text-xs">
+                  <Calculator className="h-3 w-3 mr-1" />
+                  Quote
+                </TabsTrigger>
+              </TabsList>
+            </div>
+
+            {/* Tab Contents */}
+            <div className="flex-1 overflow-auto">
+              {/* Viewport Tab */}
+              <TabsContent value="viewport" className="p-4 space-y-4 data-[state=inactive]:hidden">
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-slate-300 uppercase tracking-wider">File Info</p>
+                  <div className="bg-slate-800 rounded p-3 space-y-2 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Name:</span>
+                      <span className="text-slate-200 font-medium truncate">{file.name}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Size:</span>
+                      <span className="text-slate-200">{(file.size / 1024 / 1024).toFixed(2)} MB</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Type:</span>
+                      <span className="text-slate-200">{file.type}</span>
+                    </div>
                   </div>
-                  <Separator />
-                  <div className="space-y-2">
-                    {analysisData.detections.reduce((acc, detection) => {
-                      const existing = acc.find(item => item.category === detection.label);
-                      if (existing) {
-                        existing.count++;
-                      } else {
-                        acc.push({ category: detection.label, count: 1 });
-                      }
-                      return acc;
-                    }, [] as { category: string; count: number }[]).map(({ category, count }) => (
-                      <div key={category} className="flex justify-between items-center">
-                        <span className="text-sm capitalize">{category.replace(/_/g, ' ')}</span>
-                        <Badge variant="outline">{count}</Badge>
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-slate-300 uppercase tracking-wider">Viewport Controls</p>
+                  <div className="bg-slate-800 rounded p-3">
+                    <ViewportControls />
+                  </div>
+                </div>
+              </TabsContent>
+
+              {/* Analysis Tab */}
+              <TabsContent value="analysis" className="p-4 space-y-4 data-[state=inactive]:hidden">
+                {analysisData?.detections ? (
+                  <div className="space-y-4">
+                    <div className="bg-emerald-900/20 border border-emerald-800 rounded-lg p-3">
+                      <p className="text-xs font-semibold text-emerald-300 mb-1">Analysis Complete</p>
+                      <p className="text-sm text-emerald-200">{analysisData.detections.length} components detected</p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <p className="text-xs font-semibold text-slate-300 uppercase tracking-wider">Detected Components</p>
+                      <div className="space-y-2 max-h-[400px] overflow-auto">
+                        {analysisData.detections.reduce((acc, detection) => {
+                          const existing = acc.find(item => item.label === detection.label);
+                          if (existing) {
+                            existing.count++;
+                          } else {
+                            acc.push({ label: detection.label, count: 1, score: detection.score });
+                          }
+                          return acc;
+                        }, [] as { label: string; count: number; score: number }[]).map(({ label, count, score }) => (
+                          <div key={label} className="bg-slate-800 rounded p-2 text-xs space-y-1">
+                            <div className="flex justify-between items-center">
+                              <span className="capitalize font-medium text-slate-200">{label}</span>
+                              <Badge variant="secondary" className="text-xs">{count}x</Badge>
+                            </div>
+                            <div className="w-full bg-slate-700 rounded-full h-1 overflow-hidden">
+                              <div 
+                                className="bg-emerald-500 h-full"
+                                style={{ width: `${(score || 0.9) * 100}%` }}
+                              />
+                            </div>
+                            <p className="text-xs text-slate-400">{Math.round((score || 0.9) * 100)}% confidence</p>
+                          </div>
+                        ))}
                       </div>
-                    ))}
+                    </div>
                   </div>
-                </div>
-              </Card>
-            )}
-          </div>
+                ) : (
+                  <div className="h-full flex items-center justify-center">
+                    <div className="text-center">
+                      <Upload className="h-8 w-8 text-slate-600 mx-auto mb-2" />
+                      <p className="text-sm text-slate-400">Analysis results will appear here</p>
+                    </div>
+                  </div>
+                )}
+              </TabsContent>
 
-          {/* Right: Quote Builder */}
-          <div className="space-y-4">
-            <Card className="h-full">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Calculator className="h-5 w-5" />
-                  Quote Builder
-                </CardTitle>
-              </CardHeader>
-              <div className="p-4 h-[calc(100%-80px)]">
-                <QuoteBuilder
-                  data={analysisData?.quote}
-                  title="Cost Estimate"
-                  exportButtonText="Export Quote"
-                />
-              </div>
-            </Card>
-          </div>
+              {/* Quote Tab */}
+              <TabsContent value="quote" className="p-4 data-[state=inactive]:hidden overflow-auto">
+                {showQuoteEngine && analysisData?.quote ? (
+                  <div className="space-y-4">
+                    <QuoteBuilder
+                      data={analysisData.quote}
+                      title="Cost Estimate"
+                      exportButtonText="Export Quote"
+                    />
+                  </div>
+                ) : (
+                  <div className="h-full flex items-center justify-center">
+                    <div className="text-center">
+                      <Calculator className="h-8 w-8 text-slate-600 mx-auto mb-2" />
+                      <p className="text-sm text-slate-400">Click "Generate Quote" to create estimate</p>
+                    </div>
+                  </div>
+                )}
+              </TabsContent>
+            </div>
+          </Tabs>
         </div>
       </div>
     </div>

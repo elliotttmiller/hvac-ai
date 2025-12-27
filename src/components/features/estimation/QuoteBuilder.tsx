@@ -8,6 +8,7 @@ import { Slider } from '@/components/ui/slider';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Download,
   DollarSign,
@@ -15,7 +16,9 @@ import {
   Percent,
   Edit3,
   Check,
-  X
+  X,
+  Eye,
+  BarChart3
 } from 'lucide-react';
 
 export interface QuoteData {
@@ -40,9 +43,24 @@ export interface QuoteSettings {
   labor_hourly_rate: number;
 }
 
+export interface DetectionItem {
+  label: string;
+  conf: number;
+  box: [number, number, number, number];
+}
+
+export interface AnalysisData {
+  detections?: DetectionItem[];
+  extracted_text?: string;
+  confidence?: number;
+  [key: string]: unknown;
+}
+
 export interface QuoteBuilderProps {
   /** The quote data to display */
   data?: QuoteData | null;
+  /** Analysis data to display (detections, counts, etc.) */
+  analysisData?: AnalysisData | null;
   /** Current settings for calculations */
   settings?: QuoteSettings;
   /** Callback when settings change */
@@ -53,6 +71,8 @@ export interface QuoteBuilderProps {
   onExport?: (data: QuoteData) => void;
   /** Callback when category is hovered */
   onCategoryHover?: (category: string | null) => void;
+  /** Callback when a detection is selected */
+  onDetectionSelect?: (detection: DetectionItem) => void;
   /** Custom title for the component */
   title?: string;
   /** Custom export button text */
@@ -68,17 +88,20 @@ const DEFAULT_SETTINGS: QuoteSettings = {
 
 export function QuoteBuilder({
   data,
+  analysisData,
   settings = DEFAULT_SETTINGS,
   onSettingsChange,
   onLineItemUpdate,
   onExport,
   onCategoryHover,
-  title = "Quote",
+  onDetectionSelect,
+  title = "Analysis & Estimation",
   exportButtonText = "Export",
   editable = true,
 }: QuoteBuilderProps) {
   const [editingCategory, setEditingCategory] = useState<string | null>(null);
   const [editValues, setEditValues] = useState<{ count?: number; unit_cost?: number }>({});
+  const [activeTab, setActiveTab] = useState<string>("analysis");
 
   const handleStartEdit = (category: string, count: number, unitCost: number) => {
     if (!editable) return;
@@ -105,40 +128,151 @@ export function QuoteBuilder({
     }
   };
 
-  if (!data) {
-    return (
-      <Card className="h-full">
-        <CardHeader>
-          <CardTitle>{title}</CardTitle>
-          <CardDescription>Generate analysis to view pricing</CardDescription>
-        </CardHeader>
-      </Card>
-    );
-  }
+  // Helper function to count detections by label
+  const getDetectionCounts = () => {
+    if (!analysisData?.detections) return {};
+    
+    const counts: Record<string, number> = {};
+    analysisData.detections.forEach(detection => {
+      counts[detection.label] = (counts[detection.label] || 0) + 1;
+    });
+    return counts;
+  };
+
+  const detectionCounts = getDetectionCounts();
+  const totalDetections = analysisData?.detections?.length || 0;
 
   return (
-    <div className="h-full flex flex-col space-y-4 overflow-hidden">
-      {/* Header */}
-      <Card className="border-slate-200">
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="text-2xl font-bold">{title}</CardTitle>
-              {data.quote_id && (
-                <CardDescription className="font-mono text-xs mt-1">
-                  {data.quote_id}
-                </CardDescription>
-              )}
-            </div>
-            {onExport && (
-              <Button onClick={handleExport} variant="outline" size="sm">
-                <Download className="mr-2 h-4 w-4" />
-                {exportButtonText}
-              </Button>
+    <div className="h-full flex flex-col overflow-hidden">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col">
+        <TabsList className="grid w-full grid-cols-2 mb-4">
+          <TabsTrigger value="analysis" className="flex items-center gap-2">
+            <Eye className="h-4 w-4" />
+            Analysis
+            {totalDetections > 0 && (
+              <Badge variant="secondary" className="ml-1">
+                {totalDetections}
+              </Badge>
             )}
-          </div>
-        </CardHeader>
-      </Card>
+          </TabsTrigger>
+          <TabsTrigger value="quote" className="flex items-center gap-2">
+            <BarChart3 className="h-4 w-4" />
+            Estimate
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="analysis" className="flex-1 overflow-auto space-y-4">
+          {/* Analysis Header */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Eye className="h-5 w-5" />
+                Detection Results
+              </CardTitle>
+              <CardDescription>
+                {totalDetections > 0 
+                  ? `Found ${totalDetections} component${totalDetections !== 1 ? 's' : ''} in the blueprint`
+                  : 'No detections found yet'
+                }
+              </CardDescription>
+            </CardHeader>
+          </Card>
+
+          {/* Detection Counts */}
+          {totalDetections > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Component Summary</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid gap-3">
+                  {Object.entries(detectionCounts).map(([label, count]) => (
+                    <div key={label} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                      <div className="flex items-center gap-3">
+                        <Badge variant="outline">{label}</Badge>
+                        <span className="font-medium">{count} detected</span>
+                      </div>
+                      <Button 
+                        variant="ghost" 
+                        size="sm"
+                        onClick={() => onDetectionSelect?.({ label, conf: 0, box: [0, 0, 0, 0] })}
+                      >
+                        View
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Detection Details */}
+          {analysisData?.detections && analysisData.detections.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Detection Details</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2 max-h-96 overflow-auto">
+                  {analysisData.detections.map((detection, index) => (
+                    <div 
+                      key={index} 
+                      className="flex items-center justify-between p-3 border rounded-lg hover:bg-muted/50 cursor-pointer"
+                      onClick={() => onDetectionSelect?.(detection)}
+                    >
+                      <div className="flex items-center gap-3">
+                        <Badge variant="secondary">{detection.label}</Badge>
+                        <span className="text-sm text-muted-foreground">
+                          Confidence: {Math.round(detection.conf * 100)}%
+                        </span>
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        [{detection.box.map(coord => Math.round(coord)).join(', ')}]
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Extracted Text */}
+          {analysisData?.extracted_text && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Extracted Text</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="p-3 bg-muted/50 rounded-lg text-sm whitespace-pre-wrap max-h-48 overflow-auto">
+                  {analysisData.extracted_text}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+
+        <TabsContent value="quote" className="flex-1 overflow-auto space-y-4">
+          {/* Quote Header */}
+          <Card className="border-slate-200">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-2xl font-bold">Cost Estimate</CardTitle>
+                  {data?.quote_id && (
+                    <CardDescription className="font-mono text-xs mt-1">
+                      {data.quote_id}
+                    </CardDescription>
+                  )}
+                </div>
+                {onExport && data && (
+                  <Button onClick={handleExport} variant="outline" size="sm">
+                    <Download className="mr-2 h-4 w-4" />
+                    {exportButtonText}
+                  </Button>
+                )}
+              </div>
+            </CardHeader>
+          </Card>
 
       {/* Settings Controls */}
       {onSettingsChange && (
@@ -184,7 +318,7 @@ export function QuoteBuilder({
         </CardHeader>
         <CardContent className="overflow-y-auto h-full pb-20">
           <div className="space-y-2">
-            {data.line_items.map((item) => {
+            {data?.line_items?.map((item) => {
               const isEditing = editingCategory === item.category;
 
               return (
@@ -281,15 +415,15 @@ export function QuoteBuilder({
         <CardContent className="pt-6 space-y-2">
           <div className="flex justify-between text-sm">
             <span className="text-slate-600">Materials</span>
-            <span className="font-mono">${data.summary.subtotal_materials.toFixed(2)}</span>
+            <span className="font-mono">${data?.summary?.subtotal_materials?.toFixed(2) || '0.00'}</span>
           </div>
           <div className="flex justify-between text-sm">
             <span className="text-slate-600">Labor</span>
-            <span className="font-mono">${data.summary.subtotal_labor.toFixed(2)}</span>
+            <span className="font-mono">${data?.summary?.subtotal_labor?.toFixed(2) || '0.00'}</span>
           </div>
           <div className="flex justify-between text-sm">
             <span className="text-slate-600">Subtotal</span>
-            <span className="font-mono">${data.summary.total_cost.toFixed(2)}</span>
+            <span className="font-mono">${data?.summary?.total_cost?.toFixed(2) || '0.00'}</span>
           </div>
           <Separator className="my-2" />
           <div className="flex justify-between text-lg font-bold">
@@ -298,7 +432,7 @@ export function QuoteBuilder({
               Final Price
             </span>
             <span className="font-mono text-green-600">
-              ${data.summary.final_price.toFixed(2)}
+              ${data?.summary?.final_price?.toFixed(2) || '0.00'}
             </span>
           </div>
           <p className="text-xs text-slate-500 text-center">
@@ -306,6 +440,8 @@ export function QuoteBuilder({
           </p>
         </CardContent>
       </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

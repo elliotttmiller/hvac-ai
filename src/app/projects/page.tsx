@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Wind, Building2, DollarSign, Calendar, MapPin, FileText, Plus, Upload } from 'lucide-react';
 import Link from 'next/link';
 import ProjectDetailsModal from '@/components/features/estimation/ProjectDetailsModal';
+import { useRouter } from 'next/navigation';
 
 interface Project {
 	id: string;
@@ -24,6 +25,7 @@ export default function ProjectsPage() {
 	const [selectedProject, setSelectedProject] = useState<Project | null>(null);
 	const [modalOpen, setModalOpen] = useState(false);
 	const [loading, setLoading] = useState(true);
+	const router = useRouter();
 
 	const openProject = (project: Project) => {
 		setSelectedProject(project);
@@ -86,7 +88,11 @@ export default function ProjectsPage() {
 
 			<div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
 				{projects.map((project) => (
-					<Card key={project.id} className="hover:shadow-lg transition-shadow">
+					<Card
+						key={project.id}
+						className="hover:shadow-lg transition-shadow cursor-pointer"
+						onClick={() => openProject(project)}
+					>
 						<CardHeader>
 							<div className="flex items-start justify-between">
 								<div className="flex-1">

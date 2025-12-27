@@ -28,12 +28,6 @@ const navigation = [
     description: 'View all projects',
   },
   {
-    name: 'Documents',
-    href: '/documents',
-    icon: FileText,
-    description: 'Document management',
-  },
-  {
     name: 'Analysis',
     href: '/analysis',
     icon: Wind,

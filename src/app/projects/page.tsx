@@ -65,9 +65,16 @@ export default function ProjectsPage() {
 	return (
 		<div className="container mx-auto py-8 space-y-6">
 			<div className="flex items-center justify-between">
-				<div>
-					<h1 className="text-3xl font-bold tracking-tight">HVAC Projects</h1>
-					<p className="text-muted-foreground">Manage your HVAC blueprint analyses and estimates</p>
+				<div className="flex items-center gap-4">
+					<Link href="/">
+						<Button variant="outline" size="sm">
+							← Back to Dashboard
+						</Button>
+					</Link>
+					<div>
+						<h1 className="text-3xl font-bold tracking-tight">HVAC Projects</h1>
+						<p className="text-muted-foreground">Manage your HVAC blueprint analyses and estimates</p>
+					</div>
 				</div>
 				<Link href="/projects/new">
 					<Button>

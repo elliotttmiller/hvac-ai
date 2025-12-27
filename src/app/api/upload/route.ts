@@ -1,17 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
-import { supabaseAdmin } from '@/lib/supabase';
-import { createWorker } from 'tesseract.js';
 import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 
+// In-memory document store for development/demo
+type Document = {
+  id: string;
+  name: string;
+  type: string;
+  status: 'uploaded' | 'processing' | 'completed' | 'error';
+  size: number;
+  url: string;
+  project_id: string;
+  uploaded_by: string | null;
+  category: string;
+  extracted_text?: string;
+  confidence?: number;
+  created_at: string;
+  updated_at: string;
+};
+
+const documents: Document[] = [];
+
 export async function POST(request: NextRequest) {
   try {
-    // Authentication is optional in local/dev environment. If you have
-    // next-auth configured, restore the session check here. For now we
-    // allow uploads and attribute to 'anonymous'.
+    // For demo purposes, we'll simulate user authentication
     const userId = null;
 
     const formData = await request.formData();
@@ -74,68 +87,42 @@ export async function POST(request: NextRequest) {
     const buffer = Buffer.from(bytes);
     await writeFile(filePath, buffer);
 
-    // Insert document record into database
-    const documentData = {
+    // Create document record in memory
+    const document: Document = {
       id: fileId,
       name: file.name,
       type: fileType,
-      status: 'uploaded' as const,
+      status: 'uploaded',
       size: file.size,
       url: `/uploads/${fileName}`,
       project_id: projectId,
-  uploaded_by: userId,
-      category: category || 'Uncategorized'
+      uploaded_by: userId,
+      category: category || 'Uncategorized',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
     };
 
-    const { data: document, error: dbError } = await supabaseAdmin
-      .from('documents')
-      .insert(documentData)
-      .select()
-      .single();
+    documents.push(document);
 
-    if (dbError) {
-      console.error('Database error:', dbError);
-      return NextResponse.json(
-        { error: 'Failed to save document record' },
-        { status: 500 }
-      );
-    }
-
-    // Start OCR processing for supported files
+    // Start OCR processing for supported files (simplified for demo)
     if (isImageFile(file.name) || file.type === 'application/pdf') {
-      processOCR(fileId, filePath, file.type)
-        .then(async ({ extractedText, confidence }) => {
-          // Update document with OCR results
-          await supabaseAdmin
-            .from('documents')
-            .update({
-              status: 'completed',
-              extracted_text: extractedText,
-              confidence: confidence,
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', fileId);
-        })
-        .catch(async (error) => {
-          console.error('OCR processing failed:', error);
-          // Update document status to error
-          await supabaseAdmin
-            .from('documents')
-            .update({
-              status: 'error',
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', fileId);
-        });
+      // Simulate OCR processing
+      setTimeout(() => {
+        const docIndex = documents.findIndex(d => d.id === fileId);
+        if (docIndex !== -1) {
+          documents[docIndex].status = 'completed';
+          documents[docIndex].extracted_text = `Sample extracted text from ${file.name}`;
+          documents[docIndex].confidence = 85;
+          documents[docIndex].updated_at = new Date().toISOString();
+        }
+      }, 2000); // Simulate 2 second processing time
     } else {
       // Mark as completed for non-OCR files
-      await supabaseAdmin
-        .from('documents')
-        .update({
-          status: 'completed',
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', fileId);
+      const docIndex = documents.findIndex(d => d.id === fileId);
+      if (docIndex !== -1) {
+        documents[docIndex].status = 'completed';
+        documents[docIndex].updated_at = new Date().toISOString();
+      }
     }
 
     return NextResponse.json({
@@ -154,6 +141,40 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error('Upload error:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
+  }
+}
+
+// GET endpoint to retrieve documents
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const projectId = searchParams.get('projectId');
+    const status = searchParams.get('status');
+
+    let filteredDocuments = documents;
+
+    if (projectId) {
+      filteredDocuments = filteredDocuments.filter(doc => doc.project_id === projectId);
+    }
+
+    if (status) {
+      filteredDocuments = filteredDocuments.filter(doc => doc.status === status);
+    }
+
+    // Sort by created_at descending
+    filteredDocuments.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+    return NextResponse.json({
+      success: true,
+      documents: filteredDocuments
+    });
+
+  } catch (error) {
+    console.error('Fetch documents error:', error);
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }
@@ -187,96 +208,5 @@ function isCADFile(filename: string): boolean {
 function isImageFile(filename: string): boolean {
   const ext = path.extname(filename).toLowerCase();
   return ['.jpg', '.jpeg', '.png', '.tiff', '.tif'].includes(ext);
-}
-
-async function processOCR(fileId: string, filePath: string, fileType: string): Promise<{ extractedText: string; confidence: number }> {
-  console.log(`Starting OCR processing for file: ${fileId}`);
-
-  try {
-    // Update status to processing
-    await supabaseAdmin
-      .from('documents')
-      .update({
-        status: 'processing',
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', fileId);
-
-    const worker = await createWorker('eng');
-
-    let extractedText = '';
-    let confidence = 0;
-
-    if (fileType === 'application/pdf') {
-      // For PDF files, we'd need additional processing
-      // For now, we'll simulate PDF text extraction
-      extractedText = 'PDF text extraction would be implemented here with a PDF parser.';
-      confidence = 85;
-    } else {
-      // Process image files with Tesseract
-      const { data: { text, confidence: ocrConfidence } } = await worker.recognize(filePath);
-      extractedText = text.trim();
-      confidence = Math.round(ocrConfidence);
-    }
-
-    await worker.terminate();
-
-    console.log(`OCR completed for file: ${fileId}, confidence: ${confidence}%`);
-
-    return {
-      extractedText,
-      confidence
-    };
-
-  } catch (error) {
-    console.error(`OCR processing failed for file ${fileId}:`, error);
-    throw error;
-  }
-}
-
-// GET endpoint to retrieve documents
-export async function GET(request: NextRequest) {
-  try {
-  // Authentication optional for document listing in dev environment.
-
-    const { searchParams } = new URL(request.url);
-    const projectId = searchParams.get('projectId');
-    const status = searchParams.get('status');
-
-    let query = supabaseAdmin
-      .from('documents')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (projectId) {
-      query = query.eq('project_id', projectId);
-    }
-
-    if (status) {
-      query = query.eq('status', status);
-    }
-
-    const { data: documents, error } = await query;
-
-    if (error) {
-      console.error('Database error:', error);
-      return NextResponse.json(
-        { error: 'Failed to fetch documents' },
-        { status: 500 }
-      );
-    }
-
-    return NextResponse.json({
-      success: true,
-      documents: documents || []
-    });
-
-  } catch (error) {
-    console.error('Fetch documents error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
-  }
 }
 

@@ -5,6 +5,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 
 export default function NewProjectPage() {
   const [projectName, setProjectName] = useState("");
@@ -28,9 +30,20 @@ export default function NewProjectPage() {
   };
 
   return (
-    <div className="container mx-auto py-8">
-      <h1 className="text-3xl font-bold mb-4">Create New Project</h1>
-      <div className="space-y-4">
+    <div className="container mx-auto py-8 space-y-6">
+      <div className="flex items-center gap-4">
+        <Link href="/projects">
+          <Button variant="outline" size="sm">
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back to Projects
+          </Button>
+        </Link>
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Create New Project</h1>
+          <p className="text-muted-foreground">Set up a new HVAC blueprint analysis project</p>
+        </div>
+      </div>
+      <div className="max-w-md space-y-4">
         <Input
           placeholder="Enter project name"
           value={projectName}

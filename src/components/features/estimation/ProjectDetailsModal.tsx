@@ -48,7 +48,7 @@ export default function ProjectDetailsModal({ project, open, onOpenChange, onDel
             </div>
 
             <div className="flex items-center gap-2">
-              <Link href={`/documents?projectId=${project.id}`}>
+              <Link href={`/workspace/${project.id}`}>
                 <Button>Upload Blueprint</Button>
               </Link>
               <Button variant="outline" onClick={() => {/* edit placeholder */}}>Edit</Button>

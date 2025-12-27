@@ -63,7 +63,7 @@ export default function DocumentsPage() {
 
     try {
       setLoading(true);
-      const response = await fetch(`/api/upload?projectId=${projectId}`, {
+      const response = await fetch(`/api/analysis?projectId=${projectId}`, {
         headers: { 'ngrok-skip-browser-warning': '69420' }
       });
 
@@ -98,7 +98,7 @@ export default function DocumentsPage() {
       formData.append('projectId', projectId);
       formData.append('category', 'blueprint');
 
-      const response = await fetch('/api/upload', {
+      const response = await fetch('/api/analysis', {
         method: 'POST',
         body: formData,
         headers: { 'ngrok-skip-browser-warning': '69420' }

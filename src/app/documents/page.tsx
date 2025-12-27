@@ -7,6 +7,12 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Upload,
   FileText,
   Image,
@@ -17,7 +23,8 @@ import {
   Clock,
   ArrowLeft,
   Eye,
-  Download
+  Download,
+  X
 } from 'lucide-react';
 import Link from 'next/link';
 import { FileUploader } from '@/components/features/ingestion/FileUploader';
@@ -44,6 +51,8 @@ export default function DocumentsPage() {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [project, setProject] = useState<{ id: string; name: string; location?: string; status?: string; components?: number; estimatedCost?: number; date?: string; climateZone?: string; description?: string; } | null>(null);
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const [selectedDocument, setSelectedDocument] = useState<Document | null>(null);
 
   // Load project details
   useEffect(() => {
@@ -125,6 +134,21 @@ export default function DocumentsPage() {
     } finally {
       setUploading(false);
     }
+  };
+
+  const handlePreview = (doc: Document) => {
+    setSelectedDocument(doc);
+    setViewerOpen(true);
+  };
+
+  const handleDownload = (doc: Document) => {
+    // Create a link and trigger download
+    const link = document.createElement('a');
+    link.href = doc.url;
+    link.download = doc.name;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const getFileIcon = (type: string | undefined) => {
@@ -262,10 +286,20 @@ export default function DocumentsPage() {
                     </Badge>
 
                     <div className="flex gap-1">
-                      <Button variant="outline" size="sm">
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => handlePreview(doc)}
+                        title="Preview document"
+                      >
                         <Eye className="h-3 w-3" />
                       </Button>
-                      <Button variant="outline" size="sm">
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => handleDownload(doc)}
+                        title="Download document"
+                      >
                         <Download className="h-3 w-3" />
                       </Button>
                     </div>
@@ -276,6 +310,94 @@ export default function DocumentsPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Document Viewer Modal */}
+      <Dialog open={viewerOpen} onOpenChange={setViewerOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center justify-between">
+              <span>{selectedDocument?.name}</span>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setViewerOpen(false)}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </DialogTitle>
+          </DialogHeader>
+
+          {selectedDocument && (
+            <div className="space-y-4">
+              <div className="bg-gray-100 rounded-lg p-4 flex items-center justify-center min-h-[400px] max-h-[500px] overflow-auto">
+                {selectedDocument.type?.startsWith('image/') ? (
+                  <img 
+                    src={selectedDocument.url} 
+                    alt={selectedDocument.name}
+                    className="max-w-full max-h-full object-contain"
+                  />
+                ) : selectedDocument.type === 'application/pdf' ? (
+                  <div className="text-center">
+                    <FileText className="h-16 w-16 mx-auto text-gray-400 mb-4" />
+                    <p className="text-gray-600">PDF Viewer</p>
+                    <p className="text-sm text-gray-500 mt-2">{selectedDocument.name}</p>
+                    <Button 
+                      variant="outline" 
+                      className="mt-4"
+                      onClick={() => handleDownload(selectedDocument)}
+                    >
+                      Download to View
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="text-center">
+                    <File className="h-16 w-16 mx-auto text-gray-400 mb-4" />
+                    <p className="text-gray-600">Document Preview</p>
+                    <p className="text-sm text-gray-500 mt-2">{selectedDocument.name}</p>
+                    <Button 
+                      variant="outline" 
+                      className="mt-4"
+                      onClick={() => handleDownload(selectedDocument)}
+                    >
+                      Download File
+                    </Button>
+                  </div>
+                )}
+              </div>
+
+              {selectedDocument.extractedText && (
+                <div className="space-y-2">
+                  <h3 className="font-semibold text-sm">Extracted Text</h3>
+                  <div className="bg-gray-50 rounded p-3 max-h-[200px] overflow-auto text-sm">
+                    <p className="whitespace-pre-wrap break-words">{selectedDocument.extractedText}</p>
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <p className="text-gray-600">File Size</p>
+                  <p className="font-medium">{formatFileSize(selectedDocument.size)}</p>
+                </div>
+                <div>
+                  <p className="text-gray-600">Uploaded</p>
+                  <p className="font-medium">{new Date(selectedDocument.uploadedAt).toLocaleString()}</p>
+                </div>
+                {selectedDocument.confidence && (
+                  <div>
+                    <p className="text-gray-600">OCR Confidence</p>
+                    <p className="font-medium">{selectedDocument.confidence}%</p>
+                  </div>
+                )}
+                <div>
+                  <p className="text-gray-600">File Type</p>
+                  <p className="font-medium">{selectedDocument.type || 'Unknown'}</p>
+                </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

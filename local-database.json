@@ -1,0 +1,24 @@
+{
+  "projects": [
+    {
+      "id": "7a1baa6b-4b59-476a-b935-3279bf0c2ac1",
+      "name": "test",
+      "location": "Unknown",
+      "createdAt": "2025-12-27T13:02:41.175Z",
+      "status": "active"
+    }
+  ],
+  "documents": [
+    {
+      "id": "7d839a88-04a3-434b-b9fd-80c1d5c29f68",
+      "projectId": "7a1baa6b-4b59-476a-b935-3279bf0c2ac1",
+      "uploadedAt": "2025-12-27T13:03:42.719Z",
+      "status": "completed",
+      "name": "41_417_03_02_png.rf.204b1b3dbe9d8fe01a263be0934d97ce.jpg",
+      "type": "image/jpeg",
+      "size": 155187,
+      "url": "/api/analysis/1766840622718/41_417_03_02_png.rf.204b1b3dbe9d8fe01a263be0934d97ce.jpg",
+      "extractedText": ""
+    }
+  ]
+}

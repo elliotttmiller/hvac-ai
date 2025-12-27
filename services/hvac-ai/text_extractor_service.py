@@ -105,8 +105,21 @@ class TextExtractor:
             raise RuntimeError("OCR engine not loaded")
         
         try:
-            # Run OCR
-            results = self.ocr_engine.ocr(image, cls=self.use_angle_cls)
+            # Run OCR. PaddleOCR's API has changed across versions (some accept 'cls' kwarg,
+            # others do not). Try the common signature first and fall back gracefully.
+            try:
+                results = self.ocr_engine.ocr(image, cls=self.use_angle_cls)
+            except TypeError as te:
+                # Likely the installed PaddleOCR version does not accept 'cls'.
+                logger.debug(f"PaddleOCR.ocr() rejected 'cls' kwarg: {te}. Retrying without it.")
+                try:
+                    results = self.ocr_engine.ocr(image)
+                except Exception as e:
+                    logger.error(f"PaddleOCR.ocr() failed without 'cls': {e}", exc_info=True)
+                    return []
+            except Exception as e:
+                logger.error(f"PaddleOCR.ocr() failed: {e}", exc_info=True)
+                return []
             
             extractions = []
             

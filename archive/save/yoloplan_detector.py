@@ -6,7 +6,7 @@ Based on: https://github.com/DynMEP/YOLOplan
 Implementation: Complete Weeks 1-16 integration
 """
 
-from ultralytics import YOLO
+from ultralytics.yolo import YOLO
 import cv2
 import numpy as np
 from typing import List, Dict, Any, Optional, Tuple

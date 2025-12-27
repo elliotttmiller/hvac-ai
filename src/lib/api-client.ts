@@ -1,5 +1,15 @@
 /**
  * API Client for Quote Generation
+ * 
+ * NOTE: Quote generation is now integrated directly into the /api/hvac/analyze endpoint.
+ * The analyze endpoint returns a response with structure:
+ * {
+ *   detections: [...],
+ *   quote: { ... },    // Pricing is embedded in the response
+ *   image_shape: [...]
+ * }
+ * 
+ * The quote is automatically extracted and stored in the pricing-store.
  */
 
 import type { Quote, QuoteSettings } from './pricing-store';
@@ -39,26 +49,20 @@ export interface GenerateQuoteResponse {
 }
 
 /**
- * Generate a quote from analysis data
+ * @deprecated Quote generation is now integrated into /api/hvac/analyze endpoint.
+ * The quote is returned as part of the analyze response under the 'quote' field.
+ * This function is kept for backward compatibility but should not be used.
+ * 
+ * Use the quote from the analyze response instead:
+ * const response = await fetch('/api/hvac/analyze', ...)
+ * const quote = response.quote;  // Extract quote from response
  */
 export async function generateQuote(request: GenerateQuoteRequest): Promise<GenerateQuoteResponse> {
-  const PYTHON_SERVICE_URL = process.env.NEXT_PUBLIC_AI_SERVICE_URL || 'http://localhost:8000';
-  
-  const response = await fetch(`${PYTHON_SERVICE_URL}/api/v1/quote/generate`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'ngrok-skip-browser-warning': '69420'
-    },
-    body: JSON.stringify(request)
-  });
-  
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: 'Quote generation failed' }));
-    throw new Error(error.detail || 'Failed to generate quote');
-  }
-  
-  return response.json();
+  throw new Error(
+    'generateQuote() is deprecated. ' +
+    'Quote generation is now integrated into /api/hvac/analyze endpoint. ' +
+    'Extract the quote from the analyze response instead: response.quote'
+  );
 }
 
 /**
@@ -68,19 +72,18 @@ export async function generateQuote(request: GenerateQuoteRequest): Promise<Gene
 export async function checkPricingAvailable(): Promise<{ available: boolean; reason?: string }> {
   const PYTHON_SERVICE_URL = process.env.NEXT_PUBLIC_AI_SERVICE_URL || 'http://localhost:8000';
   try {
-    const res = await fetch(`${PYTHON_SERVICE_URL}/api/v1/quote/available`, {
+    // Check the health endpoint which includes pricing_enabled status
+    const res = await fetch(`${PYTHON_SERVICE_URL}/health`, {
       method: 'GET',
       headers: { 'ngrok-skip-browser-warning': '69420' }
     });
 
     if (!res.ok) {
-      // Try to parse JSON body for reason
-      const body = await res.json().catch(() => ({}));
-      return { available: false, reason: body.detail || body.reason || `HTTP ${res.status}` };
+      return { available: false, reason: `HTTP ${res.status}` };
     }
 
-    const json = await res.json().catch(() => ({ available: false }));
-    return { available: !!json.available, reason: json.reason };
+    const json = await res.json().catch(() => ({ pricing_enabled: false }));
+    return { available: !!json.pricing_enabled, reason: json.reason };
   } catch (err) {
     return { available: false, reason: String(err) };
   }

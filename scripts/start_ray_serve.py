@@ -72,20 +72,41 @@ def start_ray_serve():
         # Skip Ray Serve for now and just run FastAPI directly on the backend port
         logger.info(f"Deploying FastAPI application (Port: {BACKEND_PORT})...")
         logger.info("=" * 60)
-        logger.info("✅ RAY SERVE DEPLOYMENT STARTING")
+        logger.info("✅ BACKEND DEPLOYMENT STARTING")
         logger.info(f"   - Backend: http://0.0.0.0:{BACKEND_PORT}")
         logger.info(f"   - Health:  http://0.0.0.0:{BACKEND_PORT}/health")
         logger.info(f"   - Dashboard: http://127.0.0.1:8265")
         logger.info("=" * 60)
         
-        # Start Ray Serve (without blocking)
-        serve.start()
-        
-        # For now, we'll run FastAPI directly with uvicorn
-        # This allows the health checks to work while inference happens in Ray
+        # Ray cluster is already initialized above
+        # We'll run FastAPI directly with uvicorn since inference_graph.py
+        # already has Ray operations internally. Ray Serve proxy would be redundant.
         import uvicorn
-        logger.info("Starting FastAPI with uvicorn...")
-        uvicorn.run(fastapi_app, host="0.0.0.0", port=BACKEND_PORT, log_level="info")
+        import threading
+        logger.info("Starting FastAPI with uvicorn (Ray inference available)...")
+        
+        # Create a uvicorn server configuration
+        config = uvicorn.Config(
+            fastapi_app,
+            host="0.0.0.0",
+            port=BACKEND_PORT,
+            log_level="info",
+            access_log=True
+        )
+        server = uvicorn.Server(config)
+        
+        # Run the server in a background thread
+        server_thread = threading.Thread(target=server.run, daemon=True)
+        server_thread.start()
+        
+        # Keep the main thread alive
+        logger.info("[STARTUP] Backend server is running. Press Ctrl+C to stop.")
+        try:
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
+            logger.info("Shutting down backend...")
+            raise
         
     except ImportError as e:
         logger.error(f"[ERROR] Failed to import Ray. Please run: pip install 'ray[serve]'", exc_info=True)

@@ -6,9 +6,8 @@ export async function POST(request: NextRequest) {
   try {
     // Accept flexible form fields from the frontend and translate to the
     // Python service's API. Frontend callers may POST to this Next.js route
-    // with either 'image' (used by the client) or 'file' (legacy). We map:
-    // - click/segment requests (contain 'coords' or 'coords') -> /api/v1/segment
-    // - full-image count requests -> /api/v1/count
+    // with either 'image' (used by the client) or 'file' (legacy).
+    // All requests are forwarded to /api/hvac/analyze on the backend.
 
     const formData = await request.formData();
     const incomingFile = (formData.get('file') || formData.get('image')) as File | null;

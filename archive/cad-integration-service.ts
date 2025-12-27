@@ -4,7 +4,7 @@
  */
 
 import axios from 'axios';
-import { ErrorTracker, PerformanceMonitor } from './production-config';
+import { ErrorTracker, PerformanceMonitor } from '../src/lib/production-config';
 
 export interface CADFile {
   id: string;

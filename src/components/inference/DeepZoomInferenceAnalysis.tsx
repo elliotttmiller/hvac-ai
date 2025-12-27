@@ -11,6 +11,7 @@ import { toast } from 'sonner';
 import DeepZoomViewer from '@/components/viewer/DeepZoomViewer';
 import AnnotationSidebar from '@/components/inference/AnnotationSidebar';
 import { useAnnotationStore } from '@/lib/annotation-store';
+import { useQuoteStore } from '@/lib/pricing-store';
 import type { RenderConfig } from '@/types/deep-zoom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -66,6 +67,9 @@ export default function DeepZoomInferenceAnalysis() {
     spatialIndex,
   } = useAnnotationStore();
 
+  // Quote store - for pricing/quote data
+  const { setQuote } = useQuoteStore();
+
   // Handle file upload
   const handleDrop = useCallback((files: File[]) => {
     if (files.length > 0) {
@@ -117,15 +121,15 @@ export default function DeepZoomInferenceAnalysis() {
 
     setIsAnalyzing(true);
 
-  const formData = new FormData();
-  // Provide both names for the uploaded file to maximize compatibility
-  formData.append('image', uploadedImage);
-  formData.append('file', uploadedImage);
+    const formData = new FormData();
+    // Provide both names for the uploaded file to maximize compatibility
+    formData.append('image', uploadedImage);
+    formData.append('file', uploadedImage);
     formData.append('conf_threshold', '0.50');
     formData.append('nms_threshold', '0.45');
 
     try {
-      const res = await fetch(`${API_BASE_URL}/api/v1/analyze`, {
+      const res = await fetch(`${API_BASE_URL}/api/hvac/analyze?stream=1`, {
         method: 'POST',
         body: formData,
       });
@@ -150,17 +154,30 @@ export default function DeepZoomInferenceAnalysis() {
 
       const data = await res.json();
 
-      if (!data.segments || !Array.isArray(data.segments)) {
+      // Handle new response format: { detections, quote, image_shape }
+      // Also handle legacy format: { segments, total_objects_found }
+      const detections = data.detections || data.segments || [];
+      
+      if (!detections || !Array.isArray(detections)) {
         toast.error('Invalid response format from analysis service');
         throw new Error('Invalid response structure');
       }
 
-      initializeFromSegments(data.segments);
+      // Initialize annotations from detections
+      initializeFromSegments(detections);
 
-      const count = data.total_objects_found || data.segments.length;
-      toast.success(`Analysis complete: Found ${count} component${count !== 1 ? 's' : ''}`, {
-        duration: 3000,
-      });
+      // Extract and store quote if present in response
+      if (data.quote) {
+        setQuote(data.quote);
+        toast.success(
+          `Analysis complete: ${detections.length} component(s) found, quote generated`,
+          { duration: 3000 }
+        );
+      } else {
+        toast.success(`Analysis complete: Found ${detections.length} component${detections.length !== 1 ? 's' : ''}`, {
+          duration: 3000,
+        });
+      }
     } catch (e) {
       const errorMsg = e instanceof Error ? e.message : 'Failed to analyze image';
       if (!errorMsg.includes('Analysis')) {
@@ -186,28 +203,15 @@ export default function DeepZoomInferenceAnalysis() {
 
       console.log('[DeepZoomInferenceAnalysis] Delta to save:', delta);
 
-      // Call delta-save API endpoint
-      const res = await fetch(`${API_BASE_URL}/api/v1/annotations/save`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          ...delta,
-          verification_status: 'verified',
-        }),
-      });
+      // NOTE: Annotation persistence is currently a client-side feature.
+      // The backend doesn't have a /api/hvac/annotations/save endpoint yet.
+      // For now, we store changes locally and in the annotation store.
+      // TODO: Implement server-side annotation persistence in the future.
 
-      if (!res.ok) {
-        const errorText = await res.text();
-        throw new Error(errorText || 'Failed to save annotations');
-      }
-
-      const result = await res.json();
-      
       clearDirtyFlags();
       toast.success(
-        `Saved ${delta.added.length} new, ${delta.modified.length} modified, ${delta.deleted.length} deleted annotations`,
+        `Saved locally: ${delta.added.length} new, ${delta.modified.length} modified, ${delta.deleted.length} deleted annotations. ` +
+        `(Server persistence coming soon)`,
         { duration: 3000 }
       );
     } catch (e) {

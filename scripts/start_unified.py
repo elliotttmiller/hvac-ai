@@ -105,17 +105,29 @@ def start_and_stream(command_args, name, color_code, env, cwd):
 def wait_for_backend_health(url: str, timeout: float = 90.0) -> bool:
     """Polls a URL until it returns a 200 OK."""
     import urllib.request
+    import urllib.error
+    
+    # Give backend time to start uvicorn server
+    print(f"[{_ts()}] [STARTUP] Waiting for uvicorn to initialize...")
+    time.sleep(3)
     
     deadline = time.time() + timeout
+    attempt = 0
     while time.time() < deadline:
+        attempt += 1
         try:
             with urllib.request.urlopen(url, timeout=2) as resp:
                 if resp.status == 200:
-                    print(f"[{_ts()}] [STARTUP] ✅ Backend health check passed.")
+                    print(f"[{_ts()}] [STARTUP] ✅ Backend health check passed (attempt {attempt}).")
                     return True
-        except Exception:
-            pass
+        except urllib.error.HTTPError as e:
+            if attempt % 5 == 0:  # Log every 5th attempt to avoid spam
+                print(f"[{_ts()}] [STARTUP] Health check attempt {attempt}: HTTP {e.code}")
+        except Exception as e:
+            if attempt % 5 == 0:
+                print(f"[{_ts()}] [STARTUP] Health check attempt {attempt}: {type(e).__name__}")
         time.sleep(1.0)
+    print(f"[{_ts()}] [STARTUP] ❌ Backend health check failed after {timeout} seconds.")
     return False
 
 def main():

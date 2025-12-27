@@ -1,8 +1,6 @@
 """
 Unified Start Script - HVAC AI Platform
 Launches the Ray Serve backend and Next.js frontend in parallel.
-Automatically detects and uses the local .venv.
-Reads all configuration from .env.local.
 """
 
 import subprocess
@@ -20,7 +18,7 @@ REPO_ROOT = SCRIPT_DIR.parent
 RAY_SERVE_SCRIPT = SCRIPT_DIR / "start_ray_serve.py"
 FRONTEND_CMD = "npm run dev"
 
-# Load environment from .env.local to get port configurations
+# Load environment from .env.local to get ports
 shared_env = os.environ.copy()
 env_file = REPO_ROOT / ".env.local"
 if env_file.exists():
@@ -33,42 +31,31 @@ if env_file.exists():
     except Exception:
         pass
 
-# Use the exact variable names from .env.local
 BACKEND_PORT = int(shared_env.get('BACKEND_PORT', '8000'))
 FRONTEND_PORT = int(shared_env.get('FRONTEND_PORT', '3000'))
-MODEL_PATH = shared_env.get('MODEL_PATH', '')
-
 
 def _ts():
     """Formatted timestamp for logs."""
     return datetime.now().strftime("%H:%M:%S")
 
 def get_venv_python():
-    """
-    Locate the Python executable inside the .venv directory.
-    If not found, returns the current system Python executable.
-    """
+    """Locates the Python executable inside the .venv directory."""
     venv_dir = REPO_ROOT / ".venv"
-    
-    if os.name == "nt":  # Windows
+    if os.name == "nt":
         venv_python = venv_dir / "Scripts" / "python.exe"
-    else:  # Linux / Mac
+    else:
         venv_python = venv_dir / "bin" / "python"
 
     if venv_python.exists():
         print(f"[{_ts()}] [STARTUP] ✅ Using Virtual Environment: {venv_python}")
         return str(venv_python)
     else:
-        print(f"[{_ts()}] [STARTUP] ⚠️  .venv not found. Using system Python: {sys.executable}")
+        print(f"[{_ts()}] [STARTUP] ⚠️  .venv not found. Using system Python.")
         return sys.executable
 
 def start_process(command_args, name, color_code, env, cwd):
-    """Starts and returns a subprocess."""
-    env["PYTHONUNBUFFERED"] = "1"
-    env["PYTHONIOENCODING"] = "utf-8"
-    
+    """Starts a subprocess and returns the Popen object."""
     is_shell_cmd = isinstance(command_args, str)
-    
     process = subprocess.Popen(
         command_args,
         stdout=subprocess.PIPE,
@@ -85,49 +72,37 @@ def start_process(command_args, name, color_code, env, cwd):
     return process
 
 def stream_output(process, name, color_code):
-    """Reads and prints process output line by line."""
+    """Reads and prints process output line by line in a thread."""
     try:
         if process.stdout:
             for line in iter(process.stdout.readline, ""):
                 if line:
                     print(f"{color_code}[{_ts()} {name}] {line.rstrip()}\033[0m")
-    except Exception as e:
-        print(f"Error streaming {name}: {e}")
+    except Exception:
+        pass
 
 def start_and_stream(command_args, name, color_code, env, cwd):
-    """Starts a process and streams its output in a background thread."""
+    """Starts a process and streams its output."""
     proc = start_process(command_args, name, color_code, env=env, cwd=cwd)
     thread = threading.Thread(target=stream_output, args=(proc, name, color_code))
     thread.daemon = True
     thread.start()
     return proc
 
-def wait_for_backend_health(url: str, timeout: float = 90.0) -> bool:
+def wait_for_backend_health(url: str, timeout: float = 120.0) -> bool:
     """Polls a URL until it returns a 200 OK."""
     import urllib.request
-    import urllib.error
-    
-    # Give backend time to start uvicorn server
-    print(f"[{_ts()}] [STARTUP] Waiting for uvicorn to initialize...")
-    time.sleep(3)
     
     deadline = time.time() + timeout
-    attempt = 0
     while time.time() < deadline:
-        attempt += 1
         try:
             with urllib.request.urlopen(url, timeout=2) as resp:
                 if resp.status == 200:
-                    print(f"[{_ts()}] [STARTUP] ✅ Backend health check passed (attempt {attempt}).")
+                    print(f"[{_ts()}] [STARTUP] ✅ Backend health check passed.")
                     return True
-        except urllib.error.HTTPError as e:
-            if attempt % 5 == 0:  # Log every 5th attempt to avoid spam
-                print(f"[{_ts()}] [STARTUP] Health check attempt {attempt}: HTTP {e.code}")
-        except Exception as e:
-            if attempt % 5 == 0:
-                print(f"[{_ts()}] [STARTUP] Health check attempt {attempt}: {type(e).__name__}")
-        time.sleep(1.0)
-    print(f"[{_ts()}] [STARTUP] ❌ Backend health check failed after {timeout} seconds.")
+        except Exception:
+            pass
+        time.sleep(2.0)
     return False
 
 def main():
@@ -139,20 +114,13 @@ def main():
     print("HVAC AI - Full Stack Launcher")
     print("=" * 60)
     
-    # Show configuration
-    if MODEL_PATH:
-        print(f"[INFO] Model Path: {MODEL_PATH}")
-    
     python_exe = get_venv_python()
-
-    # Pass the pre-loaded env to child processes
-    backend_env = shared_env.copy()
 
     # Start Backend
     backend_cmd = [python_exe, str(RAY_SERVE_SCRIPT)]
-    backend_proc = start_and_stream(backend_cmd, "AI-ENGINE", "\033[35m", backend_env, REPO_ROOT)
+    backend_proc = start_and_stream(backend_cmd, "AI-ENGINE", "\033[35m", shared_env, REPO_ROOT)
     
-    # Wait for Backend to be healthy
+    # Wait for Backend
     health_url = f"http://127.0.0.1:{BACKEND_PORT}/health"
     print(f"[INFO] Waiting for backend at {health_url}...")
     
@@ -164,26 +132,22 @@ def main():
     # Start Frontend
     frontend_proc = None
     if not args.no_frontend:
-        print("[INFO] Starting Frontend...")
         frontend_env = shared_env.copy()
-        # Ensure Next.js uses the correct port from .env.local
         frontend_env['PORT'] = str(FRONTEND_PORT)
         frontend_proc = start_and_stream(FRONTEND_CMD, "UI-CLIENT", "\033[32m", frontend_env, REPO_ROOT)
     
     print("\n[INFO] Platform Running. Press Ctrl+C to stop.\n")
     
     try:
-        # Keep main thread alive and watch for child process exits
         while True:
-            time.sleep(1)
             if backend_proc.poll() is not None:
-                print(f"[ERROR] Backend exited with code {backend_proc.returncode}")
+                print(f"[ERROR] Backend exited unexpectedly.")
                 break
+            time.sleep(1)
     except KeyboardInterrupt:
         print("\n[INFO] Stopping platform...")
     finally:
-        processes = [backend_proc, frontend_proc]
-        for proc in processes:
+        for proc in [backend_proc, frontend_proc]:
             if proc and proc.poll() is None:
                 if os.name == 'nt':
                     subprocess.call(['taskkill', '/F', '/T', '/PID', str(proc.pid)])

@@ -1,48 +1,57 @@
 """
-HVAC AI Services
+HVAC AI Inference Service Package
+=================================
 
-HVAC-specialized AI services including:
-- SAHI-powered component detection
-- Prompt engineering framework
-- Multi-model ensemble inference
-- YOLO-based detection and inference
-- Integrated detector pipeline
-- Vision Language Model (VLM) capabilities
+This package contains the core AI/ML services for the HVAC platform,
+architected as a distributed inference graph using Ray Serve.
+
+It provides the necessary components to build and run the AI pipeline:
+- Service classes for individual AI tasks (Vision, Language).
+- Ray Serve deployments that wrap these services.
+- An application builder (`build_app`) that composes the deployments into a runnable graph.
+
+This package is designed to be the "AI Engine" of the platform.
 """
 
-__version__ = "1.0.0"
+__version__ = "2.0.0"  # Signifies a major architectural refactor
 
-# Import key components for easy access
-from .hvac_sahi_engine import create_hvac_sahi_predictor, HVACSAHIConfig
-from .hvac_prompt_engineering import create_hvac_prompt_framework
-from .hvac_detector import HVACDetector
-from .yolo_inference import YOLOInferenceEngine
-from .hvac_pipeline import HVACDrawingAnalyzer, create_hvac_analyzer
-from .pipeline_models import (
-    PipelineConfig, DetectionBox, DetectionResult,
-    HVACResult, HVACInterpretation, PipelineStage
+# --- Core Service Classes ---
+# These are the pure Python classes that contain the actual AI logic.
+# They are infrastructure-agnostic and can be tested independently.
+from .object_detector_service import ObjectDetector
+from .text_extractor_service import TextExtractor
+from .utils.geometry import GeometryUtils, OBB
+
+# --- Ray Serve Application Entrypoint ---
+# This is the primary function used by startup scripts to build and run the entire
+# distributed application. It follows the official "Application Builder" pattern.
+from .inference_graph import build_app
+
+# --- Ray Serve Deployments ---
+# Exposing the deployment classes allows for advanced testing or composition
+# in other potential application graphs.
+from .inference_graph import (
+    ObjectDetectorDeployment,
+    TextExtractorDeployment,
+    APIServer,
 )
-from .integrated_detector import IntegratedHVACDetector
-from .yoloplan_detector import YOLOplanDetector, create_yoloplan_detector
-from .yoloplan_bom import create_bom_generator, create_connectivity_analyzer
 
+
+# --- Public API Definition (`__all__`) ---
+# This defines what is considered the public, stable API of this package.
+# Other services should only import names listed here.
 __all__ = [
-    "create_hvac_sahi_predictor",
-    "HVACSAHIConfig",
-    "create_hvac_prompt_framework",
-    "HVACDetector",
-    "YOLOInferenceEngine",
-    "HVACDrawingAnalyzer",
-    "create_hvac_analyzer",
-    "PipelineConfig",
-    "DetectionBox",
-    "DetectionResult",
-    "HVACResult",
-    "HVACInterpretation",
-    "PipelineStage",
-    "IntegratedHVACDetector",
-    "YOLOplanDetector",
-    "create_yoloplan_detector",
-    "create_bom_generator",
-    "create_connectivity_analyzer",
+    # --- Core Logic ---
+    "ObjectDetector",
+    "TextExtractor",
+    "GeometryUtils",
+    "OBB",
+    
+    # --- Ray Serve Application ---
+    "build_app",
+    
+    # --- Ray Serve Components ---
+    "ObjectDetectorDeployment",
+    "TextExtractorDeployment",
+    "APIServer",
 ]

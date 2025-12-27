@@ -53,7 +53,7 @@ class HVACComponent:
     component_type: HVACComponentType
     bbox: List[float]  # [x, y, width, height]
     confidence: float
-    attributes: Dict[str, Any] = None
+    attributes: Optional[Dict[str, Any]] = None
     
     def __post_init__(self):
         if self.attributes is None:
@@ -78,11 +78,17 @@ class ComponentRelationship:
     target_id: str
     relationship_type: RelationshipType
     confidence: float
-    metadata: Dict[str, Any] = None
+    metadata: Optional[Dict[str, Any]] = None
     
     def __post_init__(self):
         if self.metadata is None:
             self.metadata = {}
+
+
+# Backwards compatibility alias
+# Older modules referenced `SystemRelationship`; provide an alias so imports
+# like `from hvac-domain.hvac_system_engine import SystemRelationship` succeed.
+SystemRelationship = ComponentRelationship
 
 
 class HVACSystemEngine:

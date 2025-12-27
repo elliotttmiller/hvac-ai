@@ -24,14 +24,14 @@ import { FileUploader } from '@/components/features/ingestion/FileUploader';
 
 interface Document {
   id: string;
+  projectId: string;
   name: string;
   type: string;
-  status: 'uploaded' | 'processing' | 'completed' | 'error';
+  status: 'processing' | 'completed' | 'error';
   size: number;
   url: string;
-  category: string;
-  created_at: string;
-  extracted_text?: string;
+  uploadedAt: string;
+  extractedText?: string;
   confidence?: number;
 }
 
@@ -112,7 +112,12 @@ export default function DocumentsPage() {
       const result = await response.json();
 
       // Add the new document to the list
-      setDocuments((prev: Document[]) => [result.document, ...prev]);
+      if (result.document) {
+        setDocuments((prev: Document[]) => [result.document, ...prev]);
+      }
+
+      // Reload documents to ensure sync
+      await loadDocuments();
 
     } catch (err) {
       console.error('Upload failed:', err);
@@ -122,7 +127,8 @@ export default function DocumentsPage() {
     }
   };
 
-  const getFileIcon = (type: string) => {
+  const getFileIcon = (type: string | undefined) => {
+    if (!type) return <File className="h-4 w-4" />;
     if (type.startsWith('image/')) return <Image className="h-4 w-4" />;
     if (type === 'application/pdf') return <FileText className="h-4 w-4" />;
     return <File className="h-4 w-4" />;
@@ -239,9 +245,9 @@ export default function DocumentsPage() {
                     <div>
                       <div className="font-medium">{doc.name}</div>
                       <div className="text-sm text-muted-foreground">
-                        {formatFileSize(doc.size)} • Uploaded {new Date(doc.created_at).toLocaleDateString()}
+                        {formatFileSize(doc.size)} • Uploaded {new Date(doc.uploadedAt).toLocaleDateString()}
                       </div>
-                      {doc.extracted_text && (
+                      {doc.extractedText && (
                         <div className="text-xs text-muted-foreground mt-1">
                           OCR: {doc.confidence ? `${doc.confidence}% confidence` : 'Completed'}
                         </div>

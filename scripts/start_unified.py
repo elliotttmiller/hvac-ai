@@ -379,7 +379,7 @@ def main():
     try:
         while True:
             time.sleep(1)
-            if backend_proc.poll() is None:
+            if backend_proc.poll() is not None:
                 print(f"\n[X] Backend exited with code {backend_proc.returncode}")
                 break
             if frontend_proc and frontend_proc.poll() is not None:

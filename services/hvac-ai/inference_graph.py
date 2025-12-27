@@ -55,7 +55,6 @@ try:
         from pricing.pricing_service import PricingEngine, QuoteRequest, AnalysisData, QuoteSettings
     except ImportError:
         # Try alternative import path for hvac-domain
-        import sys
         hvac_domain_path = SERVICES_ROOT / "hvac-domain"
         if str(hvac_domain_path) not in sys.path:
             sys.path.insert(0, str(hvac_domain_path))
@@ -462,13 +461,18 @@ class InferenceGraphIngress:
         )
         
         # Generate quote (run in thread to avoid blocking async loop)
+        # Note: asyncio.to_thread creates a thread per request. Under high load,
+        # consider using a shared ThreadPoolExecutor for better resource management.
         quote_response = await asyncio.to_thread(
             self.pricing_engine.generate_quote,
             quote_request
         )
         
         # Convert Pydantic model to dict
-        return quote_response.model_dump()  # or .dict() for older pydantic versions
+        try:
+            return quote_response.model_dump()  # Pydantic v2
+        except AttributeError:
+            return quote_response.dict()  # Pydantic v1
 
 
 def build_inference_graph(

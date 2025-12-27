@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 
 # Add services to path
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parent.parent
 SERVICES_ROOT = REPO_ROOT / "services"
 sys.path.insert(0, str(SERVICES_ROOT))
 sys.path.insert(0, str(SERVICES_ROOT / "hvac-ai"))

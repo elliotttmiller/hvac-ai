@@ -1,7 +1,8 @@
 """
-Unified Start Script - HVAC Cortex Infrastructure
-Launches the complete AI platform in Ray Serve mode (distributed inference).
-Automatically detects and uses the local .venv environment.
+Unified Start Script - HVAC AI Platform
+Launches the Ray Serve backend and Next.js frontend in parallel.
+Automatically detects and uses the local .venv.
+Reads all configuration from .env.local.
 """
 
 import subprocess
@@ -13,22 +14,39 @@ from datetime import datetime
 import argparse
 from pathlib import Path
 
-# Configuration
+# --- Configuration ---
 SCRIPT_DIR = Path(__file__).parent
 REPO_ROOT = SCRIPT_DIR.parent
-PYTHON_SERVICES = REPO_ROOT / "services" / "hvac-ai"
 RAY_SERVE_SCRIPT = SCRIPT_DIR / "start_ray_serve.py"
 FRONTEND_CMD = "npm run dev"
-PORT = 8000
+
+# Load environment from .env.local to get port configurations
+shared_env = os.environ.copy()
+env_file = REPO_ROOT / ".env.local"
+if env_file.exists():
+    try:
+        with open(env_file, 'r', encoding='utf-8') as f:
+            for line in f:
+                if '=' in line and not line.startswith('#'):
+                    k, v = line.strip().split('=', 1)
+                    shared_env.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+    except Exception:
+        pass
+
+# Use the exact variable names from .env.local
+BACKEND_PORT = int(shared_env.get('BACKEND_PORT', '8000'))
+FRONTEND_PORT = int(shared_env.get('FRONTEND_PORT', '3000'))
+MODEL_PATH = shared_env.get('MODEL_PATH', '')
+
 
 def _ts():
-    """Get formatted timestamp."""
+    """Formatted timestamp for logs."""
     return datetime.now().strftime("%H:%M:%S")
 
 def get_venv_python():
     """
     Locate the Python executable inside the .venv directory.
-    Returns the path to the venv python if found, else returns system python.
+    If not found, returns the current system Python executable.
     """
     venv_dir = REPO_ROOT / ".venv"
     
@@ -44,27 +62,19 @@ def get_venv_python():
         print(f"[{_ts()}] [STARTUP] ⚠️  .venv not found. Using system Python: {sys.executable}")
         return sys.executable
 
-def start_process(command_args, name, color_code, env=None, cwd=None):
-    """
-    Start a subprocess and return the Popen object.
-    Accepts command as a list of arguments (safer/cleaner).
-    """
-    if env is None:
-        env = os.environ.copy()
-    
-    # Force unbuffered output for Python
+def start_process(command_args, name, color_code, env, cwd):
+    """Starts and returns a subprocess."""
     env["PYTHONUNBUFFERED"] = "1"
     env["PYTHONIOENCODING"] = "utf-8"
     
-    # If command is a string, shell=True. If list, shell=False (better for Windows)
-    use_shell = isinstance(command_args, str)
+    is_shell_cmd = isinstance(command_args, str)
     
     process = subprocess.Popen(
         command_args,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
-        cwd=cwd or os.getcwd(),
-        shell=use_shell,
+        cwd=cwd,
+        shell=is_shell_cmd,
         env=env,
         bufsize=1,
         universal_newlines=True,
@@ -75,41 +85,33 @@ def start_process(command_args, name, color_code, env=None, cwd=None):
     return process
 
 def stream_output(process, name, color_code):
+    """Reads and prints process output line by line."""
     try:
-        if not process.stdout:
-            return
-        for line in iter(process.stdout.readline, ""):
-            if not line:
-                break
-            clean_line = line.rstrip()
-            if clean_line:
-                print(f"{color_code}[{_ts()} {name}] {clean_line}\033[0m")
+        if process.stdout:
+            for line in iter(process.stdout.readline, ""):
+                if line:
+                    print(f"{color_code}[{_ts()} {name}] {line.rstrip()}\033[0m")
     except Exception as e:
         print(f"Error streaming {name}: {e}")
-    finally:
-        try:
-            if process.stdout:
-                process.stdout.close()
-        except Exception:
-            pass
 
-def start_and_stream(command_args, name, color_code, env=None, cwd=None):
+def start_and_stream(command_args, name, color_code, env, cwd):
+    """Starts a process and streams its output in a background thread."""
     proc = start_process(command_args, name, color_code, env=env, cwd=cwd)
-    t = threading.Thread(target=stream_output, args=(proc, name, color_code))
-    t.daemon = True
-    t.start()
+    thread = threading.Thread(target=stream_output, args=(proc, name, color_code))
+    thread.daemon = True
+    thread.start()
     return proc
 
-def wait_for_backend_health(url: str, timeout: float = 60.0) -> bool:
+def wait_for_backend_health(url: str, timeout: float = 90.0) -> bool:
+    """Polls a URL until it returns a 200 OK."""
     import urllib.request
-    import urllib.error
     
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
             with urllib.request.urlopen(url, timeout=2) as resp:
                 if resp.status == 200:
-                    print(f"[{_ts()}] [STARTUP] Backend health OK")
+                    print(f"[{_ts()}] [STARTUP] ✅ Backend health check passed.")
                     return True
         except Exception:
             pass
@@ -122,73 +124,27 @@ def main():
     args = parser.parse_args()
     
     print("=" * 60)
-    print("HVAC Cortex - AI Infrastructure Launcher")
+    print("HVAC AI - Full Stack Launcher")
     print("=" * 60)
     
-    # 0. Clean up any leftover processes on ports 8000 and 3000
-    print(f"[{_ts()}] [STARTUP] Cleaning up any leftover processes...")
-    if os.name == 'nt':  # Windows
-        # Kill any process using port 8000 (Ray Serve)
-        try:
-            subprocess.run(
-                ['netstat', '-ano'],
-                capture_output=True,
-                timeout=5
-            )
-            # Note: On Windows, we'd need to parse netstat output to kill specific ports
-            # For now, Ray will handle port cleanup on restart
-        except Exception:
-            pass
-    else:  # Linux/Mac
-        try:
-            subprocess.run(['fuser', '-k', '8000/tcp'], capture_output=True, timeout=5)
-            subprocess.run(['fuser', '-k', '3000/tcp'], capture_output=True, timeout=5)
-        except Exception:
-            pass
+    # Show configuration
+    if MODEL_PATH:
+        print(f"[INFO] Model Path: {MODEL_PATH}")
     
-    # 1. Determine Python Interpreter (Venv or System)
     python_exe = get_venv_python()
 
-    # Load Environment
-    backend_env = os.environ.copy()
-    env_file = REPO_ROOT / ".env.local"
-    
-    if env_file.exists():
-        try:
-            with open(env_file, 'r', encoding='utf-8') as f:
-                for line in f:
-                    if '=' in line and not line.startswith('#'):
-                        k, v = line.strip().split('=', 1)
-                        backend_env[k.strip()] = v.strip().strip('"').strip("'")
-        except Exception:
-            pass
+    # Pass the pre-loaded env to child processes
+    backend_env = shared_env.copy()
 
-    backend_env["PYTHONPATH"] = str(PYTHON_SERVICES)
-    
-    # Check Model Path
-    model_path = backend_env.get('MODEL_PATH')
-    if model_path:
-        print(f"[INFO] Model Path: {model_path}")
-    else:
-        print("[WARN] MODEL_PATH not set in .env.local")
-
-    # Start Backend (Using Venv Python)
-    # We pass a LIST of arguments to avoid shell parsing issues on Windows
+    # Start Backend
     backend_cmd = [python_exe, str(RAY_SERVE_SCRIPT)]
+    backend_proc = start_and_stream(backend_cmd, "AI-ENGINE", "\033[35m", backend_env, REPO_ROOT)
     
-    backend_proc = start_and_stream(
-        backend_cmd,
-        "AI-ENGINE",
-        "\033[35m", # Magenta
-        backend_env,
-        cwd=REPO_ROOT
-    )
-    
-    # Wait for Health
-    health_url = f"http://127.0.0.1:{PORT}/health"
+    # Wait for Backend to be healthy
+    health_url = f"http://127.0.0.1:{BACKEND_PORT}/health"
     print(f"[INFO] Waiting for backend at {health_url}...")
     
-    if not wait_for_backend_health(health_url, timeout=90.0):
+    if not wait_for_backend_health(health_url):
         print("[ERROR] Backend failed to start. Terminating.")
         backend_proc.terminate()
         sys.exit(1)
@@ -197,17 +153,15 @@ def main():
     frontend_proc = None
     if not args.no_frontend:
         print("[INFO] Starting Frontend...")
-        frontend_proc = start_and_stream(
-            FRONTEND_CMD, # Keep as string for shell execution (npm needs shell)
-            "UI-CLIENT",
-            "\033[32m", # Green
-            backend_env,
-            cwd=REPO_ROOT
-        )
+        frontend_env = shared_env.copy()
+        # Ensure Next.js uses the correct port from .env.local
+        frontend_env['PORT'] = str(FRONTEND_PORT)
+        frontend_proc = start_and_stream(FRONTEND_CMD, "UI-CLIENT", "\033[32m", frontend_env, REPO_ROOT)
     
     print("\n[INFO] Platform Running. Press Ctrl+C to stop.\n")
     
     try:
+        # Keep main thread alive and watch for child process exits
         while True:
             time.sleep(1)
             if backend_proc.poll() is not None:
@@ -216,17 +170,13 @@ def main():
     except KeyboardInterrupt:
         print("\n[INFO] Stopping platform...")
     finally:
-        if frontend_proc:
-            if os.name == 'nt':
-                subprocess.call(['taskkill', '/F', '/T', '/PID', str(frontend_proc.pid)])
-            else:
-                frontend_proc.terminate()
-        
-        if backend_proc:
-            if os.name == 'nt':
-                subprocess.call(['taskkill', '/F', '/T', '/PID', str(backend_proc.pid)])
-            else:
-                backend_proc.terminate()
+        processes = [backend_proc, frontend_proc]
+        for proc in processes:
+            if proc and proc.poll() is None:
+                if os.name == 'nt':
+                    subprocess.call(['taskkill', '/F', '/T', '/PID', str(proc.pid)])
+                else:
+                    proc.terminate()
         print("[INFO] Shutdown complete.")
 
 if __name__ == "__main__":

@@ -15,6 +15,7 @@ from pathlib import Path
 
 # FastAPI & Starlette
 from fastapi import FastAPI, Request, File, UploadFile, Form, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import JSONResponse
 from starlette.types import Receive, Send, Scope
 
@@ -176,6 +177,25 @@ class APIServer:
         # --- Internal FastAPI App ---
         self.app = FastAPI(title="HVAC AI Platform")
 
+        # CORS: allow local frontend during development. Can be configured
+        # via FRONTEND_ORIGINS env var (comma-separated) in production.
+        origins = os.environ.get("FRONTEND_ORIGINS")
+        if origins:
+            allow_origins = [o.strip() for o in origins.split(",") if o.strip()]
+        else:
+            allow_origins = [
+                "http://localhost:3000",
+                "http://127.0.0.1:3000",
+            ]
+
+        self.app.add_middleware(
+            CORSMiddleware,
+            allow_origins=allow_origins,
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+
         @self.app.get("/health")
         def health():
             try:
@@ -190,23 +210,38 @@ class APIServer:
 
         @self.app.post("/api/hvac/analyze")
         async def analyze(
-            file: UploadFile = File(...),
+            # Make both optional so FastAPI won't auto-validate and we can handle resolution manually
+            file: Optional[UploadFile] = File(None),
+            image: Optional[UploadFile] = File(None),
             conf_threshold: float = Form(0.5),
             project_id: Optional[str] = Form(None),
             location: Optional[str] = Form(None)
         ):
             try:
-                # 1. Read & Decode Image
-                contents = await file.read()
+                # 1. Manual Resolution Logic
+                target_file = file or image
+
+                # Debug logging to aid frontend/backend matching
+                if target_file:
+                    logger.info(f"[APIServer] Received file: {getattr(target_file, 'filename', '<unknown>')}")
+                else:
+                    logger.warning("[APIServer] No file received in 'file' or 'image' fields")
+                    return JSONResponse(
+                        {"error": "field 'file' is required. Please upload with key 'file' or 'image'."},
+                        status_code=400,
+                    )
+
+                # 2. Read & Decode Image
+                contents = await target_file.read()
                 nparr = np.frombuffer(contents, np.uint8)
-                image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-                if image is None:
-                    raise HTTPException(400, "Invalid image file")
+                image_np = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+                if image_np is None:
+                    return JSONResponse({"error": "Invalid image file (decoding failed)"}, status_code=400)
 
-                # 2. Object Detection
-                detections = await self.detector.detect.remote(image)
+                # 3. Object Detection
+                detections = await self.detector.detect.remote(image_np)
 
-                # 3. Text Extraction (Parallelized)
+                # 4. Text Extraction (Parallelized)
                 ocr_tasks = []
                 ocr_indices = []
 
@@ -219,15 +254,15 @@ class APIServer:
                         if 'obb' in det:
                             try:
                                 obb_data = OBB(**det['obb'])
-                                crop, _ = GeometryUtils.extract_and_preprocess_obb(image, obb_data)
+                                crop, _ = GeometryUtils.extract_and_preprocess_obb(image_np, obb_data)
                             except Exception:
                                 pass # Fallback to bbox if geometry fails
-                        
+
                         if crop is None and 'bbox' in det:
                             x1, y1, x2, y2 = map(int, det['bbox'])
-                            crop = image[y1:y2, x1:x2]
+                            crop = image_np[y1:y2, x1:x2]
 
-                        if crop is not None and crop.size > 0:
+                        if crop is not None and getattr(crop, 'size', 0) > 0:
                             ocr_indices.append(i)
                             # Fire off async task
                             ocr_tasks.append(self.extractor.extract.remote(crop))
@@ -240,7 +275,7 @@ class APIServer:
                             detections[idx]['textContent'] = res['text']
                             detections[idx]['textConfidence'] = res['confidence']
 
-                # 4. Pricing Logic
+                # 5. Pricing Logic
                 quote = None
                 if self.pricing_engine:
                     try:
@@ -250,11 +285,9 @@ class APIServer:
                             label = d['label']
                             # Use OCR text to refine label if possible (e.g. valve -> valve_2in)
                             if d.get('textContent'):
-                                # Simple heuristic: append text to label for SKU lookup
-                                # The pricing engine should handle fuzzy matching
                                 label = f"{label}_{d['textContent']}"
                             counts[label] = counts.get(label, 0) + 1
-                        
+
                         # Build Data Objects
                         analysis_data = AnalysisData(
                             total_objects=len(detections), 
@@ -265,26 +298,25 @@ class APIServer:
                             location=location or "Default",
                             analysis_data=analysis_data
                         )
-                        
+
                         # Generate Quote
                         quote_obj = await asyncio.to_thread(
                             self.pricing_engine.generate_quote, 
                             quote_req
                         )
-                        
+
                         # Serialize Pydantic model
                         quote = quote_obj.model_dump() if hasattr(quote_obj, 'model_dump') else quote_obj.dict()
-                        
+
                     except Exception as e:
                         logger.error(f"Pricing failed: {e}")
-                        # Don't fail the whole request, just return null quote
 
-                # 5. Final Response
+                # 6. Final Response
                 response_data = {
                     "status": "success",
                     "detections": make_serializable(detections),
                     "quote": make_serializable(quote),
-                    "image_shape": image.shape[:2]
+                    "image_shape": image_np.shape[:2]
                 }
 
                 return JSONResponse(response_data)

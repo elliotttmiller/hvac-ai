@@ -60,6 +60,21 @@ def main():
         if ray.is_initialized():
             ray.shutdown()
         
+        # --- Workaround: run sync handlers in threadpool to avoid proxy async-generator GeneratorExit logs.
+        # This reduces noisy "async generator ignored GeneratorExit" messages from Ray Serve proxy
+        # on certain client disconnects. It's a safe opt-in for development environments.
+        os.environ.setdefault("RAY_SERVE_RUN_SYNC_IN_THREADPOOL", "1")
+
+        # Raise the log level for Ray Serve proxy internals to reduce noisy stack traces.
+        # We'll silence the specific proxy logger and the broader ray.serve logger.
+        try:
+            logging.getLogger("ray.serve").setLevel(logging.WARNING)
+            logging.getLogger("ray.serve._private.proxy").setLevel(logging.WARNING)
+            logging.getLogger("proxy").setLevel(logging.WARNING)
+        except Exception:
+            # Best-effort; don't fail startup if loggers aren't present
+            pass
+        
         ray.init(num_gpus=1 if USE_GPU else 0, ignore_reinit_error=True)
         
     except ImportError:

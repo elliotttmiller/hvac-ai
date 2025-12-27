@@ -56,14 +56,14 @@ class ObjectDetector:
         # Load model
         self._load_model()
         
-        logger.info(f"✅ ObjectDetector initialized on {self.device}")
+        logger.info(f"[OK] ObjectDetector initialized on {self.device}")
         logger.info(f"   Confidence threshold: {self.conf_threshold}")
         logger.info(f"   Model type: YOLOv11")
     
     def _load_model(self):
         """Load the detection model (internal implementation detail)."""
         try:
-            logger.info(f"🚀 Loading detection model from: {self.model_path}")
+            logger.info(f"[LOAD] Loading detection model from: {self.model_path}")
             
             # Load YOLO model
             self.model = YOLO(str(self.model_path))
@@ -85,12 +85,12 @@ class ObjectDetector:
             except Exception:
                 logger.debug("Warm-up inference failed (non-fatal)")
             
-            logger.info(f"✅ Model loaded successfully")
+            logger.info(f"[OK] Model loaded successfully")
             logger.info(f"   Classes: {list(self.class_names.values())}")
             logger.info(f"   Supports OBB: {self.supports_obb}")
             
         except Exception as e:
-            logger.error(f"❌ Failed to load detection model: {e}", exc_info=True)
+            logger.error(f"[ERROR] Failed to load detection model: {e}", exc_info=True)
             raise RuntimeError(f"Could not initialize ObjectDetector: {e}")
     
     def detect(

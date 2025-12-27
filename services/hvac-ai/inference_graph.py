@@ -34,16 +34,16 @@ try:
 except ImportError:
     raise RuntimeError("Ray Serve not installed. Install with: pip install ray[serve]")
 
-# Ensure the repository root is on sys.path so top-level `core` package resolves
-# when this module is executed from the services folder or by Ray.
-REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
+# Ensure the services directory is on sys.path for cross-service imports
+SCRIPT_DIR = Path(__file__).resolve().parent
+SERVICES_ROOT = SCRIPT_DIR.parent
+if str(SERVICES_ROOT) not in sys.path:
+    sys.path.insert(0, str(SERVICES_ROOT))
 
-# Local imports
-from core.services.object_detector import ObjectDetector
-from core.services.text_extractor import TextExtractor
-from core.utils.geometry import GeometryUtils, OBB
+# Local imports (direct from hvac-ai service)
+from object_detector_service import ObjectDetector
+from text_extractor_service import TextExtractor
+from utils.geometry import GeometryUtils, OBB
 
 logger = logging.getLogger(__name__)
 
@@ -71,13 +71,13 @@ class ObjectDetectorDeployment:
             model_path: Path to detection model weights
             conf_threshold: Confidence threshold for detections
         """
-        logger.info("🚀 Initializing ObjectDetectorDeployment...")
+        logger.info("[AI-ENGINE] Initializing ObjectDetectorDeployment...")
         self.detector = ObjectDetector(
             model_path=model_path,
             device='cuda',  # Will use the fractional GPU allocation
             conf_threshold=conf_threshold
         )
-        logger.info("✅ ObjectDetectorDeployment ready")
+        logger.info("[AI-ENGINE] ObjectDetectorDeployment ready")
     
     async def __call__(self, image_data: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
@@ -122,13 +122,13 @@ class TextExtractorDeployment:
             lang: Language code
             use_gpu: Use GPU acceleration
         """
-        logger.info("🚀 Initializing TextExtractorDeployment...")
+        logger.info("[AI-ENGINE] Initializing TextExtractorDeployment...")
         self.extractor = TextExtractor(
             lang=lang,
             use_angle_cls=False,  # We handle rotation via geometry
             use_gpu=use_gpu
         )
-        logger.info("✅ TextExtractorDeployment ready")
+        logger.info("[AI-ENGINE] TextExtractorDeployment ready")
     
     async def __call__(self, crop_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
@@ -189,10 +189,10 @@ class InferenceGraphIngress:
             object_detector_handle: Ray Serve handle to ObjectDetectorDeployment
             text_extractor_handle: Ray Serve handle to TextExtractorDeployment
         """
-        logger.info("🚀 Initializing InferenceGraphIngress...")
+        logger.info("[AI-ENGINE] Initializing InferenceGraphIngress...")
         self.object_detector = object_detector_handle
         self.text_extractor = text_extractor_handle
-        logger.info("✅ InferenceGraphIngress ready")
+        logger.info("[AI-ENGINE] InferenceGraphIngress ready")
     
     async def __call__(self, request_data: Dict[str, Any]) -> Dict[str, Any]:
         """

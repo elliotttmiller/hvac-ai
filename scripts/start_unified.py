@@ -235,7 +235,7 @@ def main():
     args = parser.parse_args()
     
     print("\033[1;36m" + "=" * 60 + "\033[0m")
-    print("\033[1;36m🚀 HVAC Cortex - AI Infrastructure (Ray Serve)\033[0m")
+    print("\033[1;36mHVAC Cortex - AI Infrastructure (Ray Serve)\033[0m")
     print("\033[1;36m" + "=" * 60 + "\033[0m")
     print(f"Mode: RAY-SERVE")
     print(f"Frontend: {'Disabled' if args.no_frontend else 'Enabled'}")
@@ -373,20 +373,20 @@ def main():
     
     # Output streaming started at process launch (start_and_stream)
     
-    print("\n\033[1;33m⚡ Platform running. Press Ctrl+C to stop all services.\033[0m\n")
+    print("\n\033[1;33mPlatform running. Press Ctrl+C to stop all services.\033[0m\n")
     
     # Keep running
     try:
         while True:
             time.sleep(1)
             if backend_proc.poll() is not None:
-                print(f"\n❌ Backend exited with code {backend_proc.returncode}")
+                print(f"\n[X] Backend exited with code {backend_proc.returncode}")
                 break
             if frontend_proc and frontend_proc.poll() is not None:
-                print(f"\n❌ Frontend exited with code {frontend_proc.returncode}")
+                print(f"\n[X] Frontend exited with code {frontend_proc.returncode}")
                 break
     except KeyboardInterrupt:
-        print("\n\n🛑 Stopping platform...")
+        print("\n\n[STOP] Stopping platform...")
     finally:
         print("Terminating processes...")
         
@@ -399,7 +399,7 @@ def main():
         if backend_proc.poll() is None:
             backend_proc.terminate()
         
-        print("✅ Shutdown complete.")
+        print("[OK] Shutdown complete.")
 
 
 if __name__ == "__main__":

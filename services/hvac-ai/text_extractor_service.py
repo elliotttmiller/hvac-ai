@@ -52,7 +52,7 @@ class TextExtractor:
         # Load OCR engine
         self._load_engine()
         
-        logger.info(f"✅ TextExtractor initialized")
+        logger.info(f"[OK] TextExtractor initialized")
         logger.info(f"   Language: {self.lang}")
         logger.info(f"   Use GPU: {self.use_gpu}")
         logger.info(f"   Angle classification: {self.use_angle_cls}")
@@ -60,7 +60,7 @@ class TextExtractor:
     def _load_engine(self):
         """Load the OCR engine (internal implementation detail)."""
         try:
-            logger.info("🚀 Loading OCR engine (PaddleOCR)...")
+            logger.info("[LOAD] Loading OCR engine (PaddleOCR)...")
             
             # Import PaddleOCR
             try:
@@ -78,10 +78,10 @@ class TextExtractor:
                 show_log=False
             )
             
-            logger.info("✅ OCR engine loaded successfully")
+            logger.info("[OK] OCR engine loaded successfully")
             
         except Exception as e:
-            logger.error(f"❌ Failed to load OCR engine: {e}", exc_info=True)
+            logger.error(f"[ERROR] Failed to load OCR engine: {e}", exc_info=True)
             raise RuntimeError(f"Could not initialize TextExtractor: {e}")
     
     def extract_text(

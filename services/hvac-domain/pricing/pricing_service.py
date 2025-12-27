@@ -82,7 +82,7 @@ class PricingEngine:
         
         self.catalog_path = catalog_path
         self.catalog = self._load_catalog()
-        logger.info(f"✅ Pricing Engine initialized with {len(self.catalog['components'])} component types")
+        logger.info(f"[OK] Pricing Engine initialized with {len(self.catalog['components'])} component types")
 
     def _load_catalog(self) -> Dict:
         """Load pricing catalog from JSON file"""
@@ -187,7 +187,7 @@ class PricingEngine:
         Returns:
             QuoteResponse with line items and totals
         """
-        logger.info(f"🔄 Generating quote for project {request.project_id}")
+        logger.info(f"[PRICING] Generating quote for project {request.project_id}")
         
         # Get settings with defaults
         settings = request.settings or QuoteSettings()
@@ -197,7 +197,7 @@ class PricingEngine:
         labor_multiplier = regional['labor']
         material_multiplier = regional['material']
         
-        logger.info(f"📍 Location: {request.location} (Labor: {labor_multiplier}x, Material: {material_multiplier}x)")
+        logger.info(f"[LOCATION] {request.location} (Labor: {labor_multiplier}x, Material: {material_multiplier}x)")
         
         # Calculate line items
         line_items: List[LineItem] = []
@@ -245,7 +245,7 @@ class PricingEngine:
         margin_amount = total_cost * (settings.margin_percent / 100.0)
         final_price = self._round_currency(total_cost + margin_amount)
         
-        logger.info(f"✅ Quote generated: Materials ${subtotal_materials}, Labor ${subtotal_labor}, Total ${final_price}")
+        logger.info(f"[OK] Quote generated: Materials ${subtotal_materials}, Labor ${subtotal_labor}, Total ${final_price}")
         
         # Create response
         response = QuoteResponse(

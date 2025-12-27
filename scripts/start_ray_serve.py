@@ -31,9 +31,12 @@ def start_ray_serve():
         logger.warning("Inference may fail. Set MODEL_PATH in .env.local")
     
     # 2. Set PYTHONPATH
-    # This is critical so Ray can find 'core.inference_graph'
+    # Add both the hvac-ai service directory AND the parent services directory
+    # This allows inference_graph to import from hvac-ai AND from hvac-domain
     sys.path.insert(0, str(SERVICES_DIR))
-    logger.info(f"Working directory: {SERVICES_DIR}")
+    sys.path.insert(0, str(SERVICES_DIR.parent))
+    logger.info(f"Added to sys.path: {SERVICES_DIR}")
+    logger.info(f"Added to sys.path: {SERVICES_DIR.parent}")
     
     try:
         import ray
@@ -57,34 +60,20 @@ def start_ray_serve():
         logger.info("Deploying Inference Graph...")
         
         # Import the entrypoint dynamically to register it with Serve
-            # Optionally prefer a repository-root virtualenv if present. To force using
-            # your system/local Python instead of the repo .venv, set the environment
-            # variable HVAC_PREFER_REPO_VENV=0. Default is to prefer the repo .venv.
-            python_bin = sys.executable
-            prefer_repo_venv = os.getenv('HVAC_PREFER_REPO_VENV', '1') != '0'
-            if prefer_repo_venv:
-                # Windows and POSIX venv locations
-                venv_python_win = REPO_ROOT / '.venv' / 'Scripts' / 'python.exe'
-                venv_python_posix = REPO_ROOT / '.venv' / 'bin' / 'python'
-                if venv_python_win.exists():
-                    python_bin = str(venv_python_win)
-                elif venv_python_posix.exists():
-                    python_bin = str(venv_python_posix)
-        # This corresponds to 'core.inference_graph:entrypoint'
         try:
-            from core.inference_graph import entrypoint
+            from inference_graph import entrypoint
         except ImportError as e:
-            logger.error(f"Failed to import 'core.inference_graph': {e}")
+            logger.error(f"Failed to import 'inference_graph': {e}")
             logger.error(f"Current sys.path: {sys.path}")
             sys.exit(1)
         
         # Deploy the application
         serve.run(entrypoint)
         
-        logger.info("✅ Inference Graph Deployed Successfully!")
-        logger.info("   - ObjectDetector (GPU)")
-        logger.info("   - TextExtractor (GPU)")
-        logger.info("   - Ingress (HTTP :8000)")
+        logger.info("[AI-ENGINE] Inference Graph Deployed Successfully!")
+        logger.info("[AI-ENGINE]   - ObjectDetector (GPU)")
+        logger.info("[AI-ENGINE]   - TextExtractor (GPU)")
+        logger.info("[AI-ENGINE]   - Ingress (HTTP :8000)")
         
         # Keep the script running to keep the serve instance alive
         # The parent process (start_unified.py) will kill this script on exit

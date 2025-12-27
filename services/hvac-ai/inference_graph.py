@@ -19,6 +19,7 @@ Design Philosophy:
 import logging
 import os
 import sys
+import time
 import numpy as np
 import cv2
 import base64
@@ -34,18 +35,37 @@ try:
 except ImportError:
     raise RuntimeError("Ray Serve not installed. Install with: pip install ray[serve]")
 
-# Ensure the repository root is on sys.path so top-level `core` package resolves
-# when this module is executed from the services folder or by Ray.
-REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
+# Ensure the services directory is on sys.path for cross-service imports
+SCRIPT_DIR = Path(__file__).resolve().parent
+SERVICES_ROOT = SCRIPT_DIR.parent
+if str(SERVICES_ROOT) not in sys.path:
+    sys.path.insert(0, str(SERVICES_ROOT))
 
-# Local imports
-from core.services.object_detector import ObjectDetector
-from core.services.text_extractor import TextExtractor
-from core.utils.geometry import GeometryUtils, OBB
+# Local imports (direct from hvac-ai service)
+from object_detector_service import ObjectDetector
+from text_extractor_service import TextExtractor
+from utils.geometry import GeometryUtils, OBB
 
 logger = logging.getLogger(__name__)
+
+# Cross-service imports (from sibling hvac-domain service)
+try:
+    # Import with fallback to handle different path configurations
+    try:
+        from pricing.pricing_service import PricingEngine, QuoteRequest, AnalysisData, QuoteSettings
+    except ImportError:
+        # Try alternative import path for hvac-domain
+        hvac_domain_path = SERVICES_ROOT / "hvac-domain"
+        if str(hvac_domain_path) not in sys.path:
+            sys.path.insert(0, str(hvac_domain_path))
+        from pricing.pricing_service import PricingEngine, QuoteRequest, AnalysisData, QuoteSettings
+except ImportError as e:
+    logger.warning(f"Failed to import PricingEngine: {e}")
+    logger.warning("Pricing functionality will be disabled")
+    PricingEngine = None
+    QuoteRequest = None
+    AnalysisData = None
+    QuoteSettings = None
 
 # Configuration
 TEXT_RICH_CLASSES = {'id_letters', 'tag_number', 'text_label', 'label', 'text', 'tag'}
@@ -71,13 +91,13 @@ class ObjectDetectorDeployment:
             model_path: Path to detection model weights
             conf_threshold: Confidence threshold for detections
         """
-        logger.info("🚀 Initializing ObjectDetectorDeployment...")
+        logger.info("[AI-ENGINE] Initializing ObjectDetectorDeployment...")
         self.detector = ObjectDetector(
             model_path=model_path,
             device='cuda',  # Will use the fractional GPU allocation
             conf_threshold=conf_threshold
         )
-        logger.info("✅ ObjectDetectorDeployment ready")
+        logger.info("[AI-ENGINE] ObjectDetectorDeployment ready")
     
     async def __call__(self, image_data: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
@@ -122,13 +142,13 @@ class TextExtractorDeployment:
             lang: Language code
             use_gpu: Use GPU acceleration
         """
-        logger.info("🚀 Initializing TextExtractorDeployment...")
+        logger.info("[AI-ENGINE] Initializing TextExtractorDeployment...")
         self.extractor = TextExtractor(
             lang=lang,
             use_angle_cls=False,  # We handle rotation via geometry
             use_gpu=use_gpu
         )
-        logger.info("✅ TextExtractorDeployment ready")
+        logger.info("[AI-ENGINE] TextExtractorDeployment ready")
     
     async def __call__(self, crop_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
@@ -180,7 +200,9 @@ class InferenceGraphIngress:
     def __init__(
         self,
         object_detector_handle,
-        text_extractor_handle
+        text_extractor_handle,
+        enable_pricing: bool = True,
+        default_location: str = "default"
     ):
         """
         Initialize the ingress node with handles to downstream services.
@@ -188,11 +210,34 @@ class InferenceGraphIngress:
         Args:
             object_detector_handle: Ray Serve handle to ObjectDetectorDeployment
             text_extractor_handle: Ray Serve handle to TextExtractorDeployment
+            enable_pricing: Enable pricing engine integration
+            default_location: Default location for pricing calculations
         """
-        logger.info("🚀 Initializing InferenceGraphIngress...")
+        logger.info("[AI-ENGINE] Initializing InferenceGraphIngress...")
         self.object_detector = object_detector_handle
         self.text_extractor = text_extractor_handle
-        logger.info("✅ InferenceGraphIngress ready")
+        self.enable_pricing = enable_pricing and PricingEngine is not None
+        self.default_location = default_location
+        
+        # Initialize pricing engine if available
+        self.pricing_engine = None
+        if self.enable_pricing:
+            try:
+                # Find catalog path relative to hvac-domain service
+                catalog_path = SERVICES_ROOT / "hvac-domain" / "pricing" / "catalog.json"
+                if catalog_path.exists():
+                    self.pricing_engine = PricingEngine(catalog_path=catalog_path)
+                    logger.info("[AI-ENGINE] Pricing Engine initialized successfully")
+                else:
+                    logger.warning(f"[AI-ENGINE] Catalog not found at {catalog_path}, pricing disabled")
+                    self.enable_pricing = False
+            except Exception as e:
+                logger.error(f"[AI-ENGINE] Failed to initialize pricing engine: {e}")
+                self.enable_pricing = False
+        else:
+            logger.info("[AI-ENGINE] Pricing Engine disabled (not available or disabled by config)")
+        
+        logger.info("[AI-ENGINE] InferenceGraphIngress ready")
     
     async def __call__(self, request_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -203,9 +248,11 @@ class InferenceGraphIngress:
                 - image_base64: Base64-encoded image
                 - or image: numpy array directly
                 - conf_threshold: Optional confidence threshold
+                - project_id: Optional project ID for quote generation
+                - location: Optional location for regional pricing
                 
         Returns:
-            Complete analysis result with detections and text
+            Complete analysis result with detections, text, and optional quote
         """
         try:
             # 1. Decode image
@@ -233,13 +280,30 @@ class InferenceGraphIngress:
                 conf_threshold
             )
             
-            # 4. Build response
+            # 4. Generate pricing quote if enabled
+            quote = None
+            if self.enable_pricing and self.pricing_engine:
+                try:
+                    quote = await self._generate_quote(
+                        enriched_detections,
+                        request_data.get('project_id', f'AUTO-{int(time.time())}'),
+                        request_data.get('location', self.default_location)
+                    )
+                except Exception as e:
+                    logger.error(f"Quote generation failed: {e}", exc_info=True)
+                    # Continue without quote rather than failing the entire request
+            
+            # 5. Build response
             response = {
                 'status': 'success',
                 'total_detections': len(enriched_detections),
                 'detections': enriched_detections,
                 'image_shape': image.shape[:2]
             }
+            
+            # Add quote to response if available
+            if quote:
+                response['quote'] = quote
             
             return response
             
@@ -356,11 +420,66 @@ class InferenceGraphIngress:
         nparr = np.frombuffer(image_bytes, np.uint8)
         image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         return image
+    
+    async def _generate_quote(
+        self,
+        detections: List[Dict[str, Any]],
+        project_id: str,
+        location: str
+    ) -> Dict[str, Any]:
+        """
+        Generate a pricing quote from detections.
+        
+        Args:
+            detections: List of enriched detections
+            project_id: Project identifier
+            location: Location for regional pricing
+            
+        Returns:
+            Quote dictionary or None if pricing fails
+        """
+        # Count detections by category
+        counts_by_category = {}
+        for detection in detections:
+            label = detection.get('label', '').lower()
+            # Normalize label for catalog lookup
+            normalized_label = label.replace(' ', '_').replace('-', '_')
+            counts_by_category[normalized_label] = counts_by_category.get(normalized_label, 0) + 1
+        
+        # Create analysis data
+        analysis_data = AnalysisData(
+            total_objects=len(detections),
+            counts_by_category=counts_by_category
+        )
+        
+        # Create quote request
+        quote_request = QuoteRequest(
+            project_id=project_id,
+            location=location,
+            analysis_data=analysis_data,
+            settings=None  # Use defaults
+        )
+        
+        # Generate quote (run in thread to avoid blocking async loop)
+        # Note: asyncio.to_thread creates a thread per request. Under high load,
+        # consider using a shared ThreadPoolExecutor for better resource management.
+        quote_response = await asyncio.to_thread(
+            self.pricing_engine.generate_quote,
+            quote_request
+        )
+        
+        # Convert Pydantic model to dict
+        try:
+            return quote_response.model_dump()  # Pydantic v2
+        except AttributeError:
+            return quote_response.dict()  # Pydantic v1
 
 
 def build_inference_graph(
     model_path: str,
-    conf_threshold: float = 0.5
+    conf_threshold: float = 0.5,
+    enable_pricing: bool = True,
+    default_location: str = "default"
 ) -> Application:
     """
     Build and return the complete inference graph application.
@@ -368,6 +487,8 @@ def build_inference_graph(
     Args:
         model_path: Path to YOLO model weights
         conf_threshold: Default confidence threshold
+        enable_pricing: Enable pricing engine integration
+        default_location: Default location for pricing
         
     Returns:
         Ray Serve Application
@@ -387,7 +508,9 @@ def build_inference_graph(
     # Deploy Ingress with handles to other services
     ingress = InferenceGraphIngress.bind(
         object_detector_handle=object_detector,
-        text_extractor_handle=text_extractor
+        text_extractor_handle=text_extractor,
+        enable_pricing=enable_pricing,
+        default_location=default_location
     )
     
     return ingress
@@ -396,7 +519,7 @@ def build_inference_graph(
 # Entrypoint for Ray Serve CLI
 def entrypoint():
     """
-    Entrypoint for Ray Serve: serve run core.inference_graph:entrypoint
+    Entrypoint for Ray Serve: serve run inference_graph:entrypoint
     """
     # Get model path from environment or use relative default
     # Try to find model relative to the current directory structure
@@ -409,6 +532,14 @@ def entrypoint():
     model_path = os.getenv('MODEL_PATH') or os.getenv('YOLO_MODEL_PATH') or default_model
     
     conf_threshold = float(os.getenv('CONF_THRESHOLD', '0.5'))
+    enable_pricing = os.getenv('ENABLE_PRICING', '1').lower() not in ('0', 'false', 'no')
+    default_location = os.getenv('DEFAULT_LOCATION', 'default')
     
     logger.info(f"Building inference graph with model: {model_path}")
-    return build_inference_graph(model_path, conf_threshold)
+    logger.info(f"Pricing enabled: {enable_pricing}")
+    return build_inference_graph(
+        model_path,
+        conf_threshold,
+        enable_pricing=enable_pricing,
+        default_location=default_location
+    )

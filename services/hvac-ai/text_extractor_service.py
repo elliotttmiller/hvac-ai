@@ -3,6 +3,10 @@ Text Extractor Service
 Wraps PaddleOCR for text recognition on blueprint crops.
 """
 
+# --- CRITICAL: Disable Phone-Home Checks BEFORE any PaddleOCR imports ---
+import os
+os.environ['DISABLE_MODEL_SOURCE_CHECK'] = 'True'
+
 import logging
 import numpy as np
 from typing import Optional, Tuple, List

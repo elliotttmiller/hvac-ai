@@ -53,3 +53,4 @@ export function deleteProject(id: string) {
   projects = projects.filter((p) => p.id !== id);
   return projects.length < before;
 }
+

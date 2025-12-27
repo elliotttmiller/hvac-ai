@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Wind, Building2, DollarSign, Calendar, MapPin, FileText, Plus, Upload } from 'lucide-react';
 import Link from 'next/link';
-import ProjectDetailsModal from '@/components/projects/ProjectDetailsModal';
+import ProjectDetailsModal from '@/components/features/estimation/ProjectDetailsModal';
 
 interface Project {
 	id: string;
@@ -155,3 +155,4 @@ export default function ProjectsPage() {
 		</div>
 	);
 }
+

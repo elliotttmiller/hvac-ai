@@ -3,8 +3,11 @@ Inference Graph - Distributed AI Pipeline using the Application Builder Pattern.
 Orchestrates Vision (YOLO), Language (OCR), and Business Logic (Pricing) into a unified API.
 """
 
-import logging
+# --- CRITICAL: Disable Phone-Home Checks BEFORE ANY ML imports ---
 import os
+os.environ['DISABLE_MODEL_SOURCE_CHECK'] = 'True'
+
+import logging
 import sys
 import numpy as np
 import cv2
@@ -153,7 +156,7 @@ def make_serializable(obj: Any) -> Any:
 class ObjectDetectorDeployment:
     def __init__(self, model_path: str):
         self.detector = ObjectDetector(model_path=model_path, device='cuda')
-    
+
     async def detect(self, image: np.ndarray):
         # Run in thread to avoid blocking the asyncio loop
         return await asyncio.to_thread(self.detector.detect, image)
